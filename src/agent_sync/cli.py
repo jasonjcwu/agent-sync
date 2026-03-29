@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -187,3 +188,114 @@ _DEFAULT_INDEX = """\
 <!-- Add your directives here with format: -->
 <!-- | ID | Title | Summary | Domain | Keywords | -->
 """
+
+# --- Memory subcommands ---
+
+memory_app = typer.Typer(help="Memory pipeline: collect, reflect, promote.")
+app.add_typer(memory_app, name="memory")
+
+
+@memory_app.command("today")
+def memory_today(
+    agent_path: Path = typer.Option(Path("universal-agent"), "--agent", "-a"),
+    days: int = typer.Option(7, "--days", "-d", help="How many days to look back"),
+):
+    """Show recent hot observations from all sources."""
+    from agent_sync.core.memory_schema import load_memory_config
+    from agent_sync.core.reflector import Reflector
+
+    config = load_memory_config(agent_path)
+    reflector = Reflector(config)
+    observations = reflector.collect_observations(days=days)
+
+    if not observations:
+        console.print("[yellow]No observations found.[/yellow]")
+        raise typer.Exit()
+
+    from rich.table import Table
+
+    table = Table(title=f"Hot Observations (last {days} days)")
+    table.add_column("Date", style="dim", width=12)
+    table.add_column("Type", width=10)
+    table.add_column("Source", width=12)
+    table.add_column("Title", style="bold")
+
+    for obs in observations[:50]:
+        table.add_row(obs.date, obs.type, obs.source, obs.title[:80])
+
+    console.print(table)
+    console.print(f"[dim]Showing {min(len(observations), 50)} of {len(observations)}[/dim]")
+
+
+@memory_app.command("consolidate")
+def memory_consolidate(
+    agent_path: Path = typer.Option(Path("universal-agent"), "--agent", "-a"),
+    days: int = typer.Option(7, "--days", "-d"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    gc_days: int = typer.Option(30, "--gc-days", help="Remove warm entries older than N days"),
+):
+    """Run reflector: promote hot → warm, then GC stale entries."""
+    from agent_sync.core.memory_schema import load_memory_config
+    from agent_sync.core.reflector import Reflector
+
+    config = load_memory_config(agent_path)
+    reflector = Reflector(config)
+
+    # Collect
+    observations = reflector.collect_observations(days=days)
+    console.print(f"Collected [bold]{len(observations)}[/bold] observations")
+
+    # Reflect
+    candidates = reflector.reflect(observations)
+    console.print(f"Identified [bold]{len(candidates)}[/bold] promotion candidates")
+
+    if candidates:
+        for entry in candidates:
+            console.print(f"  [green]+[/green] {entry.title} (confidence: {entry.confidence:.2f})")
+
+    if dry_run:
+        console.print("\n[dim](dry run — no files written)[/dim]")
+        raise typer.Exit()
+
+    # Promote
+    warm_path = agent_path / "memory" / "core.md"
+    if candidates:
+        warm = reflector.promote(candidates, warm_path)
+        console.print(f"[green]Promoted {len(warm.entries)} entries to {warm_path}[/green]")
+
+    # GC
+    if warm_path.exists():
+        removed = reflector.gc(warm_path, max_age_days=gc_days)
+        if removed:
+            console.print(f"[yellow]GC removed {removed} stale entries[/yellow]")
+        else:
+            console.print("[dim]No stale entries to GC[/dim]")
+
+
+@memory_app.command("push")
+def memory_push(
+    agent_path: Path = typer.Option(Path("universal-agent"), "--agent", "-a"),
+):
+    """Push memory to Git remote."""
+    import subprocess
+
+    memory_dir = agent_path / "memory"
+    if not memory_dir.exists():
+        console.print("[yellow]No memory directory found.[/yellow]")
+        raise typer.Exit(1)
+
+    subprocess.run(["git", "add", str(memory_dir)], cwd=agent_path, check=True)
+    subprocess.run(["git", "commit", "-m", f"memory sync {datetime.now().strftime('%Y-%m-%d')}"], cwd=agent_path, check=True)
+    subprocess.run(["git", "push"], cwd=agent_path, check=True)
+    console.print("[green]Memory pushed to remote.[/green]")
+
+
+@memory_app.command("pull")
+def memory_pull(
+    agent_path: Path = typer.Option(Path("universal-agent"), "--agent", "-a"),
+):
+    """Pull latest memory from Git remote."""
+    import subprocess
+
+    subprocess.run(["git", "pull"], cwd=agent_path, check=True)
+    console.print("[green]Memory pulled from remote.[/green]")

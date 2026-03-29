@@ -1,0 +1,22 @@
+# USER.md — About Your Human
+
+- **Name:** {{ user.name }}
+- **Timezone:** {{ user.timezone }}
+{% if user.github %}- **GitHub:** {{ user.github }}{% endif %}
+{% if user.occupation %}- **Occupation:** {{ user.occupation }}{% endif %}
+
+## Interests
+
+{% for interest in user.interests %}
+- {{ interest }}
+{% endfor %}
+
+## Preferences
+
+{% for pref in user.preferences %}
+- {{ pref }}
+{% endfor %}
+
+---
+
+*The more you know, the better you can help. But remember — you're learning about a person, not building a dossier. Respect the difference.*

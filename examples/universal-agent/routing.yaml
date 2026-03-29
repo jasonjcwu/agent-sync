@@ -1,0 +1,14 @@
+platforms:
+  openclaw:
+    type: chat-assistant
+    strengths: [daily chat, scheduled tasks, messaging, file management]
+  claude_code:
+    type: coding-agent
+    strengths: [complex coding, code review, refactoring]
+  codex:
+    type: research-agent
+    strengths: [deep research, large-scale code generation]
+defaults:
+  chat: openclaw
+  coding: claude_code
+  research: codex

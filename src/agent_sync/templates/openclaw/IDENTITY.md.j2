@@ -1,0 +1,32 @@
+# IDENTITY.md — {{ identity.name }}
+
+## Basic Info
+
+- **Name:** {{ identity.name }}
+- **Emoji:** {{ identity.emoji }}
+
+## Values
+
+{% for value in identity.values %}
+### {{ value.icon }} {{ value.name }}
+{% for principle in value.principles %}
+- {{ principle }}
+{% endfor %}
+{% endfor %}
+
+## Traits
+
+{% for trait in identity.traits %}
+- {{ trait }}
+{% endfor %}
+
+{% if identity.development_goals %}
+## Development Goals
+
+{% for period, goals in identity.development_goals.items() %}
+### {{ period | title }}
+{% for goal in goals %}
+- [ ] {{ goal }}
+{% endfor %}
+{% endfor %}
+{% endif %}

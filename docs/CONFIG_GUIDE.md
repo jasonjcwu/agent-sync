@@ -1,289 +1,177 @@
-# agent-sync 配置指南
+# agent-sync 快速上手指南
 
-> 一次配置，多平台同步 — 让你的 AI agent 在所有平台保持一致人格和记忆
+> 5 分钟，让你的 AI 助手在所有平台保持一致。
 
----
+## 这是什么
 
-## 安装
+你用 Claude Code 教会了 AI 用 pnpm、写中文注释、走 feature branch。切到 Cursor，这些全没了——你得重新写一遍 .cursorrules。
+
+agent-sync 让你**只写一份配置，自动同步到所有平台**。
+
+## 第一步：安装
 
 ```bash
 pip install git+https://github.com/jasonjcwu/agent-sync.git
 ```
 
-验证安装：
+验证：
 ```bash
 agent-sync --version
-agent-sync detect
 ```
 
----
+## 第二步：初始化
 
-## 快速开始
-
-### 1. 初始化
-
+进入你的项目目录：
 ```bash
-agent-sync init ~/my-project
+cd ~/my-project
+agent-sync init .
 ```
 
-生成 `universal-agent/` 目录结构：
+这会创建 `universal-agent/` 目录，里面有 4 个 YAML 文件等你填写。
 
-```
-universal-agent/
-├── soul.yaml          # 元人格：行为边界、核心信条
-├── identity.yaml      # 具体人格：名字、价值观、沟通风格
-├── user.yaml          # 用户画像：服务对象、偏好、时区
-├── routing.yaml       # 任务路由
-├── directives/        # 行为指令（按领域索引）
-│   └── INDEX.md
-├── skills/            # 技能定义（SKILL.md 格式）
-└── memory/
-    └── core.md        # 温记忆（跨会话核心画像）
-```
+## 第三步：填写配置
 
-### 2. 编辑配置
+### soul.yaml — AI 的性格和底线
 
-**soul.yaml** — 元人格（所有平台通用）：
 ```yaml
 name: assistant
 language: zh-CN
 personality:
   - 真诚，不表演有用
-  - 有观点，不谄媚
-  - 先自己想办法，再问
+  - 有自己的观点，不当应声虫
+  - 遇到问题先自己想办法
 boundaries:
-  - 私人的事就留在私人里
-  - 对外行动前，不确定就先问
+  - 私密信息不外泄
+  - 对外操作先问确认
 communication:
   style: 简洁但彻底
-  tone: 温暖真诚，有边界感
+  tone: 温暖真诚
   do_not:
     - 说"好问题！"
     - 说"我很乐意帮忙！"
 ```
 
-**identity.yaml** — 具体人格：
-```yaml
-name: Assistant
-emoji: "🤖"
-values: []
-traits: []
-development_goals: {}
-```
+### user.yaml — 你是谁
 
-**user.yaml** — 用户画像：
 ```yaml
 name: 你的名字
 timezone: Asia/Shanghai
 github: your-username
 preferences:
-  - 用 pnpm 而非 npm
-  - 中英双语分析
+  - 用 pnpm 不要 npm
+  - 代码注释用中文
+  - 永远不要直接 push 到 main
 ```
 
-### 3. 同步到所有平台
-
-```bash
-# 同步到当前目录检测到的所有平台
-agent-sync sync -a universal-agent/ .
-
-# 预览变更（不写文件）
-agent-sync sync --dry-run
-
-# 只同步到特定平台
-agent-sync sync -t cursor
-agent-sync sync -t claude_code
-```
-
----
-
-## 支持的平台
-
-### OpenClaw
-
-同步生成：`SOUL.md`, `IDENTITY.md`, `USER.md`, `MEMORY.md`, `SKILLS.md`
-
-检测条件：项目中有 `SOUL.md` 或 `AGENTS.md`
-
-### Claude Code
-
-同步生成：
-- 项目级 `CLAUDE.md`（人格 + 指令）
-- 全局 `~/.claude/CLAUDE.md`（用户偏好）
-
-检测条件：项目中有 `CLAUDE.md` 或 `.claude/` 目录
-
-### Codex
-
-同步生成：`AGENTS.md`
-
-检测条件：项目中有 `AGENTS.md` 或 `.codex` 目录
-
-### Cursor
-
-同步生成 `.cursor/rules/` 目录下的 `.mdc` 文件：
-
-| 文件 | 激活模式 | 内容 |
-|------|----------|------|
-| `soul.mdc` | alwaysApply | 人格 + 行为边界 |
-| `identity.mdc` | alwaysApply | 身份 + 价值观 |
-| `user.mdc` | alwaysApply | 用户上下文 + 偏好 |
-| `directives/*.mdc` | 按需加载 | 行为指令 |
-| `skills.mdc` | 按需加载 | 技能注册表 |
-
-检测条件：项目中有 `.cursor/rules/` 或 `.cursorrules`
-
----
-
-## 记忆系统
-
-### 三层架构
-
-```
-热记忆（每次对话）
-  claude-mem SQLite + OpenClaw 日志
-  ↓ Reflector 自动采集
-温记忆（跨会话）
-  memory/core.md — 压缩到 ~100 行
-  ↓ 自动分类: insight / procedure / tool_pattern / preference
-冷记忆（长期知识）
-  directives/ — 行为公理
-  skills/ — 可复用技能
-  Obsidian — 外挂大脑（公司外环境）
-```
-
-### 记忆源配置
-
-默认从两个源采集：
+### identity.yaml — AI 的身份
 
 ```yaml
-# universal-agent/memory.yaml（可选，有默认值）
-sources:
-  - type: claude-mem
-    path: ~/.claude-mem/claude-mem.db
-  - type: openclaw
-    path: ../memory/  # universal-agent/ 同级的 memory/
-
-gate:
-  threshold: 1.5
+name: Assistant
+emoji: "🤖"
+values: []
+traits: []
 ```
 
-### 安装 claude-mem（Claude Code 记忆收集）
+### routing.yaml — 平台分工（可选）
+
+```yaml
+platforms:
+  claude_code:
+    type: coding-agent
+    strengths: [复杂编码, 代码审查]
+  cursor:
+    type: ide-agent
+    strengths: [快速编码, 实时补全]
+defaults:
+  coding: claude_code
+  ide: cursor
+```
+
+## 第四步：同步
+
+```bash
+# 先预览会生成什么文件
+agent-sync sync --dry-run
+
+# 确认没问题，正式同步
+agent-sync sync
+```
+
+这会自动检测你的项目装了哪些平台（Cursor、Claude Code、Codex...），然后生成对应的配置文件。
+
+**生成了什么：**
+
+| 平台 | 文件 |
+|------|------|
+| Cursor | `.cursor/rules/soul.mdc` + `identity.mdc` + `user.mdc` |
+| Claude Code | `CLAUDE.md` + `~/.claude/CLAUDE.md`（全局） |
+| Codex | `AGENTS.md` |
+| OpenClaw | `SOUL.md` + `IDENTITY.md` + `USER.md` |
+
+## 第五步：日常使用
+
+```bash
+# 改了 soul.yaml？重新同步
+agent-sync sync
+
+# 看看 AI 最近学到了什么
+agent-sync memory today
+
+# 把观察提炼成记忆
+agent-sync memory consolidate
+
+# 查看所有层的记忆状态（推荐每天一次）
+agent-sync memory review
+
+# 发现可以沉淀为 skill 的重复操作
+agent-sync skills discover
+```
+
+## 记忆系统（进阶）
+
+agent-sync 有三层记忆，自动从你的对话中采集：
+
+```
+热记忆（每次对话的观察）
+  ↓ agent-sync memory consolidate
+温记忆（跨会话核心画像，~100行）
+  ↓ 自动分类：insight / procedure / tool_pattern / preference
+  ↓ agent-sync memory distill
+冷记忆（长期知识：directives/ + skills/）
+```
+
+**需要 claude-mem 插件来自动采集 Claude Code 的对话：**
 
 在 Claude Code 中执行：
-
 ```
 /plugin marketplace add thedotmack/claude-mem
 /plugin install claude-mem
 ```
 
-> 参考: [claude-mem](https://github.com/thedotmack/claude-mem)
+## 多台电脑
 
----
-
-## CLI 命令参考
-
-### 同步命令
+把 `universal-agent/` 放 Git 仓库，每台电脑 clone 同一份配置：
 
 ```bash
-agent-sync init [path]              # 创建 universal-agent/ 目录
-agent-sync detect [path]            # 检测已安装平台
-agent-sync sync [path]              # 同步到所有平台
-agent-sync sync -t cursor           # 只同步 Cursor
-agent-sync sync --dry-run           # 预览不写入
-agent-sync status [path]            # 各平台同步状态
+git clone <repo> ~/agent-config
+agent-sync sync -a ~/agent-config/universal-agent ~/my-project
 ```
 
-### 记忆命令
+## 常见问题
 
-```bash
-agent-sync memory today             # 查看近期热记忆
-agent-sync memory consolidate       # 热 → 温：提炼晋升
-agent-sync memory distill           # 温 → 冷：蒸馏为指令
-agent-sync memory distill --dry-run # 预览蒸馏候选
-agent-sync memory review            # 交互式回顾（所有层 + skill 候选）
-agent-sync memory push              # 推送记忆到 Git
-agent-sync memory pull              # 从 Git 拉取最新记忆
-```
+**Q: 我改了 CLAUDE.md，会被覆盖吗？**
+A: 会。每次 `agent-sync sync` 都会重新生成。改 YAML 源文件，不要改生成的文件。
 
-### 技能命令
+**Q: 只想同步到 Cursor 怎么办？**
+A: `agent-sync sync -t cursor`
 
-```bash
-agent-sync skills scan              # 扫描 skills/ 目录
-agent-sync skills discover          # 从温记忆发现 skill 候选
-agent-sync skills discover --confirm # 确认后创建 skill 脚手架
-agent-sync skills sync              # 同步 skills 到各平台
-```
+**Q: 我的项目没有 .cursor 目录能同步吗？**
+A: `agent-sync detect` 查看检测到了哪些平台。只要项目里有对应平台的特征文件就会被检测到。
 
----
+**Q: 记忆是怎么分类的？**
+A: Reflector 自动分类——描述流程的归为 `procedure`（可能变成 skill），描述偏好的归为 `preference`，通用观察归为 `insight`。只有 `procedure` 和 `tool_pattern` 出现 2 次以上才会被推荐为 skill 候选。
 
-## 温记忆分类
+## 完整文档
 
-Reflector 在晋升温记忆时自动分类：
-
-| 分类 | 说明 | 下一步 |
-|------|------|--------|
-| `insight` | 通用观察和学习 | 可能蒸馏为 directive |
-| `procedure` | 可重复流程和工作流 | → skill 候选 |
-| `tool_pattern` | 工具/技术使用模式 | → skill 候选 |
-| `preference` | 用户偏好和习惯 | 保留在温记忆 |
-
-只有 `procedure` 和 `tool_pattern` 类型的条目才会被推荐为 skill 候选。
-
----
-
-## 日常使用
-
-```bash
-# 同步人格到所有平台
-agent-sync sync -a ~/agent-workspace/universal-agent
-
-# 查看最近记忆
-agent-sync memory today
-
-# 提炼记忆（热 → 温）
-agent-sync memory consolidate
-
-# 蒸馏洞察（温 → 冷 → directives）
-agent-sync memory distill
-
-# 交互式回顾（推荐每天一次）
-agent-sync memory review
-
-# 推送到 Git
-agent-sync memory push
-```
-
----
-
-## 自动化
-
-### crontab（Linux/macOS）
-
-```bash
-# 每天凌晨 2 点提炼 + 蒸馏 + 推送
-0 2 * * * agent-sync memory consolidate -a ~/agent-workspace/universal-agent && agent-sync memory distill -a ~/agent-workspace/universal-agent && cd ~/agent-workspace && git add . && git commit -m "auto memory sync $(date +\%Y-\%m-\%d)" && git push
-```
-
----
-
-## 多机器同步
-
-将 `~/agent-workspace` 放在 Git 仓库，各机器克隆同一份配置：
-
-```bash
-git clone <你的仓库地址> ~/agent-workspace
-cd ~/agent-workspace
-agent-sync sync
-```
-
----
-
-## 从旧版迁移
-
-如果你之前手动维护了 `.cursorrules` 或 `CLAUDE.md`：
-
-1. `agent-sync init` 创建通用配置
-2. 把旧文件里有价值的内容迁移到对应的 YAML 文件
-3. `agent-sync sync` 重新生成各平台配置
-4. 以后只改 YAML，不要改生成的文件（文件头有 `auto-generated` 标记）
+- [README.md](../README.md) — 完整架构、CLI 参考、适配器开发指南
+- [跨平台AI人格与记忆架构设计](https://github.com/jasonjcwu/obsidian/blob/main/01_输出/跨平台AI人格与记忆架构设计.md) — 深度技术文章

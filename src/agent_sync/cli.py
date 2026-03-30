@@ -313,6 +313,7 @@ def memory_distill(
     These become long-term principles and axioms.
     """
     from agent_sync.core.reflector import Reflector
+    from agent_sync.core.schema import load_skills
 
     warm_path = agent_path / "memory" / "core.md"
     if not warm_path.exists():
@@ -346,12 +347,19 @@ def memory_distill(
 
     directives_dir = agent_path / "directives"
     directives_dir.mkdir(parents=True, exist_ok=True)
-    results = reflector.distill(candidates, directives_dir, dry_run=dry_run)
+    results = reflector.distill(warm_path, directives_dir, dry_run=False)
 
     for entry, path in results:
         console.print(f"  [green]→[/green] {path.name}: {entry.title[:50]}")
 
     console.print(f"\n[green]Distilled {len(results)} entries to directives/[/green]")
+
+    # Show skills summary
+    skills = load_skills(agent_path)
+    if skills:
+        console.print(f"\n[bold magenta]🛠 Skills: {len(skills)}[/bold magenta]")
+        for s in skills:
+            console.print(f"  {s.name}: {s.description[:60]}")
 
 
 @memory_app.command("review")
@@ -365,7 +373,8 @@ def memory_review(
     formatted for interactive chat-based review.
     """
     from agent_sync.core.memory_schema import load_memory_config
-    from agent_sync.core.reflector import Reflector
+    from agent_sync.core.reflector import Reflector, load_warm
+    from agent_sync.core.schema import load_skills, load_directives
 
     config = load_memory_config(agent_path)
     reflector = Reflector(config)
@@ -379,6 +388,10 @@ def memory_review(
 
     # Find distillation candidates
     distill_candidates = reflector.distill_candidates(warm_path) if warm else []
+
+    # Load skills and directives
+    skills = load_skills(agent_path)
+    directives = load_directives(agent_path)
 
     console.print("[bold]📊 Knowledge Review[/bold]")
     console.print(f"Period: last {days} days\n")
@@ -409,12 +422,29 @@ def memory_review(
     if distill_candidates:
         console.print(f"[bold green]❄️ Distillation Candidates: {len(distill_candidates)}[/bold green]")
         console.print("[dim]These warm entries are ready to become cold directives:[/dim]")
-        for entry in distill_candidates:
-            console.print(f"  💎 {entry.title[:60]} (confidence: {entry.confidence:.2f})")
+        for i, entry in enumerate(distill_candidates, 1):
+            console.print(f"  {i}. 💎 {entry.title[:60]} (confidence: {entry.confidence:.2f})")
         console.print()
         console.print("[bold]Run to promote:[/bold] agent-sync memory distill")
     else:
         console.print("[dim]No entries ready for distillation.[/dim]")
+
+    # Skills
+    if skills:
+        console.print(f"\n[bold magenta]🛠 Skills: {len(skills)}[/bold magenta]")
+        for s in skills:
+            console.print(f"  {s.name}: {s.description[:60]}")
+    else:
+        console.print("[dim]No skills found.[/dim]")
+
+    # Directives
+    if directives:
+        console.print(f"\n[bold blue]📘 Directives: {len(directives)}[/bold blue]")
+        for d in directives:
+            first_line = d.content.split("\n")[0][:60]
+            console.print(f"  {d.filename}: {first_line}")
+    else:
+        console.print("[dim]No directives.[/dim]")
 
     console.print()
     console.print("[bold]💡 Prompts for interactive review:[/bold]")
@@ -423,3 +453,55 @@ def memory_review(
     if observations:
         console.print("  2. 有没有遗漏的重要观察需要手动添加？")
     console.print("  3. 有没有需要删除的过期记忆？")
+
+
+# --- Skills subcommands ---
+
+skills_app = typer.Typer(help="Skills registry: scan, list, sync.")
+app.add_typer(skills_app, name="skills")
+
+
+@skills_app.command("scan")
+def skills_scan(
+    agent_path: Path = typer.Option(Path("universal-agent"), "--agent", "-a"),
+):
+    """Scan skills/ directory and list all skills."""
+    from agent_sync.core.schema import load_skills
+    from rich.table import Table
+
+    skills = load_skills(agent_path)
+    if not skills:
+        console.print("[dim]No skills found. Add skills to universal-agent/skills/[/dim]")
+        raise typer.Exit()
+
+    console.print(f"[bold]🛠 Found {len(skills)} skill(s):[/bold]\n")
+
+    table = Table()
+    table.add_column("Name", style="bold")
+    table.add_column("Path", style="dim")
+    table.add_column("Description")
+
+    for s in skills:
+        table.add_row(s.name, s.path, s.description[:60])
+
+    console.print(table)
+
+
+@skills_app.command("sync")
+def skills_sync(
+    agent_path: Path = typer.Option(Path("universal-agent"), "--agent", "-a"),
+    project_path: Path = typer.Argument(Path.cwd(), help="Target project directory"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing"),
+):
+    """Sync skills summary to all detected platforms."""
+    from agent_sync.core.schema import load_skills
+
+    skills = load_skills(agent_path)
+    if not skills:
+        console.print("[dim]No skills to sync.[/dim]")
+        raise typer.Exit()
+
+    syncer = Syncer(agent_path, project_path)
+    syncer.sync(dry_run=dry_run)
+
+    console.print(f"[green]Synced {len(skills)} skills to platforms.[/green]")

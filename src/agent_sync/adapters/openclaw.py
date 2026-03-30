@@ -7,7 +7,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
 from agent_sync.adapters.base import AdapterStatus, BaseAdapter, PullResult, SyncResult
-from agent_sync.core.schema import UniversalAgent, load_directives
+from agent_sync.core.schema import UniversalAgent, load_directives, load_skills
 
 
 class OpenClawAdapter(BaseAdapter):
@@ -50,6 +50,14 @@ class OpenClawAdapter(BaseAdapter):
         else:
             result.files_skipped.append(target)
 
+        # SKILLS.md (summary of all skills — always overwrite)
+        if agent.base_path:
+            skills = load_skills(agent.base_path)
+            if skills:
+                target = project_path / "SKILLS.md"
+                skills_content = self._render_skills(skills)
+                result.files_written.append(self._write(target, skills_content, dry_run))
+
         return result
 
     def pull(self, agent: UniversalAgent, project_path: Path) -> PullResult:
@@ -82,6 +90,17 @@ class OpenClawAdapter(BaseAdapter):
     def _render_memory(self, env: Environment, agent: UniversalAgent) -> str:
         tmpl = env.get_template("MEMORY.md.j2")
         return tmpl.render(user=agent.user)
+
+    def _render_skills(self, skills) -> str:
+        """Render a skills summary as markdown."""
+        lines = ["# Skills Registry", "", f"Total skills: {len(skills)}", ""]
+        for s in skills:
+            lines.append(f"## {s.name}")
+            if s.description:
+                lines.append(f"> {s.description}")
+            lines.append(f"- Path: `{s.path}`")
+            lines.append("")
+        return "\n".join(lines)
 
     # --- Helpers ---
 

@@ -12,6 +12,12 @@ from pydantic import BaseModel, Field
 # --- Identity Layer ---
 
 
+class CommunicationStyle(BaseModel):
+    style: str = ""
+    tone: str = ""
+    do_not: list[str] = Field(default_factory=list)
+
+
 class Soul(BaseModel):
     """Meta-personality: behavioral boundaries, core beliefs, temperament.
     Platform-agnostic. Applies to all AI agents."""
@@ -21,12 +27,6 @@ class Soul(BaseModel):
     personality: list[str] = Field(default_factory=list)
     boundaries: list[str] = Field(default_factory=list)
     communication: CommunicationStyle = Field(default_factory=lambda: CommunicationStyle())
-
-
-class CommunicationStyle(BaseModel):
-    style: str = ""
-    tone: str = ""
-    do_not: list[str] = Field(default_factory=list)
 
 
 class ValueRef(BaseModel):
@@ -111,7 +111,7 @@ class UniversalAgent(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
 
-# --- Directive File Loading ---
+# --- File Loading ---
 
 
 class DirectiveFile(BaseModel):
@@ -120,11 +120,16 @@ class DirectiveFile(BaseModel):
     content: str
 
 
-def load_directives(agent_path: Path) -> list[DirectiveFile]:
-    """Recursively scan directives/ directory and load all .md files.
+class SkillEntry(BaseModel):
+    """A loaded skill from the skills/ directory."""
+    name: str
+    path: str
+    description: str = ""
+    content: str = ""
 
-    Returns a flat list of DirectiveFile entries sorted by filename.
-    """
+
+def load_directives(agent_path: Path) -> list[DirectiveFile]:
+    """Recursively scan directives/ directory and load all .md files."""
     directives_dir = agent_path / "directives"
     if not directives_dir.is_dir():
         return []
@@ -135,6 +140,35 @@ def load_directives(agent_path: Path) -> list[DirectiveFile]:
         entries.append(DirectiveFile(
             filename=str(rel),
             content=md_file.read_text(),
+        ))
+    return entries
+
+
+def load_skills(agent_path: Path) -> list[SkillEntry]:
+    """Recursively scan skills/ directory and load all SKILL.md files."""
+    skills_dir = agent_path / "skills"
+    if not skills_dir.is_dir():
+        return []
+
+    entries: list[SkillEntry] = []
+    for skill_file in sorted(skills_dir.rglob("SKILL.md")):
+        rel = skill_file.relative_to(skills_dir)
+        skill_name = str(rel.parent) if str(rel.parent) != "." else rel.stem
+        content = skill_file.read_text()
+
+        # Extract description from first non-empty, non-heading line
+        description = ""
+        for line in content.split("\n"):
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                description = stripped[:120]
+                break
+
+        entries.append(SkillEntry(
+            name=skill_name,
+            path=str(rel),
+            description=description,
+            content=content,
         ))
     return entries
 

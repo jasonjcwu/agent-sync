@@ -1,12 +1,20 @@
-"""Reflector — hot → warm memory promotion engine.
+"""Reflector — hot → warm → cold memory promotion engine.
 
 Read observations from claude-mem SQLite + OpenClaw daily memory files.
 Identify patterns and promote to warm memory (core.md).
+
+Warm → Cold: distill high-confidence, recurring insights into directive .md files
+in the directives/ directory. These become part of the agent's axioms.
 
 Promotion gate criteria (from context-infrastructure):
 - cross_project: mentioned in 2+ projects
 - multi_verified: type appears 2+ times across observations
 - clear_scenario: has a concrete use case
+
+Distill criteria (warm → cold):
+- confidence >= 2.0 (strong signal)
+- occurrences >= 2 (seen multiple times)
+- category is "insight" or "principle"
 
 GC rule: remove entries older than N days with no active references.
 """
@@ -267,6 +275,95 @@ class Reflector:
             warm.last_updated = datetime.now().date().isoformat()
             write_warm(warm_path, warm)
         return removed
+
+    # --- Cold distillation (warm → directives) ---
+
+    def distill_candidates(self, warm_path: Path, min_confidence: float = 2.0) -> list[WarmEntry]:
+        """Identify warm entries ready for distillation to cold (directives).
+
+        An entry is a distill candidate when:
+        - confidence >= min_confidence (high-quality insight)
+        - occurrences >= 2 (repeatedly observed)
+        - has meaningful content (not trivial)
+
+        Returns candidates sorted by confidence (highest first).
+        """
+        warm = load_warm(warm_path)
+        if not warm.entries:
+            return []
+        candidates = []
+        for e in warm.entries:
+            if e.confidence < min_confidence:
+                continue
+            if e.occurrences < 2:
+                continue
+            if not e.content or len(e.content.strip()) < 20:
+                continue
+            candidates.append(e)
+        return sorted(candidates, key=lambda x: (-x.confidence, -x.occurrences))
+
+    def distill_to_directive(
+        self,
+        entry: WarmEntry,
+        directives_dir: Path,
+        domain: str = "",
+    ) -> Path:
+        """Distill a warm entry into a directive .md file.
+
+        Creates a file in directives/ with a generated filename.
+        Returns the path of the created file.
+        """
+        directives_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate filename from title
+        safe_title = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]+", "_", entry.title.strip())
+        safe_title = safe_title.strip("_")[:60]
+        if not safe_title:
+            safe_title = f"insight_{entry.origin_date}"
+        filename = f"{safe_title}.md"
+        filepath = directives_dir / filename
+
+        # Don't overwrite existing directives
+        if filepath.exists():
+            return filepath
+
+        lines = [
+            f"# {entry.title}",
+            "",
+            f"> Distilled from {entry.source} on {entry.origin_date}",
+            f"> Confidence: {entry.confidence:.2f} | Occurrences: {entry.occurrences}",
+            "",
+        ]
+        if domain:
+            lines.append(f"**Domain:** {domain}")
+            lines.append("")
+
+        lines.append(entry.content)
+        lines.append("")
+
+        filepath.write_text("\n".join(lines))
+        return filepath
+
+    def distill(
+        self,
+        warm_path: Path,
+        directives_dir: Path,
+        min_confidence: float = 2.0,
+        dry_run: bool = False,
+    ) -> list[tuple[WarmEntry, Path]]:
+        """Run full distillation: find candidates and write directive files.
+
+        Returns list of (entry, directive_path) tuples.
+        """
+        candidates = self.distill_candidates(warm_path, min_confidence)
+        results = []
+        for entry in candidates:
+            if dry_run:
+                results.append((entry, directives_dir / "dry-run"))
+            else:
+                path = self.distill_to_directive(entry, directives_dir)
+                results.append((entry, path))
+        return results
 
     # --- Source readers ---
 

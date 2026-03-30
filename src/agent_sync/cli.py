@@ -299,3 +299,127 @@ def memory_pull(
 
     subprocess.run(["git", "pull"], cwd=agent_path, check=True)
     console.print("[green]Memory pulled from remote.[/green]")
+
+
+@memory_app.command("distill")
+def memory_distill(
+    agent_path: Path = typer.Option(Path("universal-agent"), "--agent", "-a"),
+    min_confidence: float = typer.Option(2.0, "--threshold", "-t", help="Minimum confidence to distill"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing"),
+):
+    """Distill warm memory → cold directives (warm → directives/).
+
+    High-confidence warm entries get promoted to directive .md files.
+    These become long-term principles and axioms.
+    """
+    from agent_sync.core.reflector import Reflector
+
+    warm_path = agent_path / "memory" / "core.md"
+    if not warm_path.exists():
+        console.print("[yellow]No warm memory found. Run 'memory consolidate' first.[/yellow]")
+        raise typer.Exit(1)
+
+    reflector = Reflector(agent_path=agent_path)
+    candidates = reflector.distill_candidates(warm_path, min_confidence)
+
+    if not candidates:
+        console.print("[dim]No entries meet the distillation threshold.[/dim]")
+        raise typer.Exit()
+
+    console.print(f"[bold]Distillation candidates ({len(candidates)}):[/bold]")
+    from rich.table import Table
+
+    table = Table()
+    table.add_column("Title", style="bold")
+    table.add_column("Confidence", width=12)
+    table.add_column("Category", width=10)
+    table.add_column("Source", width=12)
+
+    for entry in candidates:
+        table.add_row(entry.title[:60], f"{entry.confidence:.2f}", entry.category, entry.source)
+
+    console.print(table)
+
+    if dry_run:
+        console.print("\n[dim](dry run — no files written)[/dim]")
+        raise typer.Exit()
+
+    directives_dir = agent_path / "directives"
+    directives_dir.mkdir(parents=True, exist_ok=True)
+    results = reflector.distill(candidates, directives_dir, dry_run=dry_run)
+
+    for entry, path in results:
+        console.print(f"  [green]→[/green] {path.name}: {entry.title[:50]}")
+
+    console.print(f"\n[green]Distilled {len(results)} entries to directives/[/green]")
+
+
+@memory_app.command("review")
+def memory_review(
+    agent_path: Path = typer.Option(Path("universal-agent"), "--agent", "-a"),
+    days: int = typer.Option(7, "--days", "-d"),
+):
+    """Interactive review: show recent knowledge and ask which to promote.
+
+    Outputs a summary of recent observations and distillation candidates,
+    formatted for interactive chat-based review.
+    """
+    from agent_sync.core.memory_schema import load_memory_config
+    from agent_sync.core.reflector import Reflector
+
+    config = load_memory_config(agent_path)
+    reflector = Reflector(config)
+
+    # Collect hot observations
+    observations = reflector.collect_observations(days=days)
+
+    # Load warm memory
+    warm_path = agent_path / "memory" / "core.md"
+    warm = load_warm(warm_path) if warm_path.exists() else None
+
+    # Find distillation candidates
+    distill_candidates = reflector.distill_candidates(warm_path) if warm else []
+
+    console.print("[bold]📊 Knowledge Review[/bold]")
+    console.print(f"Period: last {days} days\n")
+
+    # Hot summary
+    if observations:
+        console.print(f"[bold cyan]🔥 Hot Observations: {len(observations)}[/bold cyan]")
+        for obs in observations[:10]:
+            console.print(f"  [{obs.source}] {obs.title[:60]}")
+        if len(observations) > 10:
+            console.print(f"  ... and {len(observations) - 10} more")
+    else:
+        console.print("[dim]No hot observations.[/dim]")
+
+    console.print()
+
+    # Warm summary
+    if warm and warm.entries:
+        console.print(f"[bold yellow]🌡️ Warm Memory: {len(warm.entries)} entries[/bold yellow]")
+        for entry in warm.entries[:5]:
+            console.print(f"  {entry.title[:60]} (confidence: {entry.confidence:.2f})")
+    else:
+        console.print("[dim]No warm memory yet.[/dim]")
+
+    console.print()
+
+    # Distillation candidates
+    if distill_candidates:
+        console.print(f"[bold green]❄️ Distillation Candidates: {len(distill_candidates)}[/bold green]")
+        console.print("[dim]These warm entries are ready to become cold directives:[/dim]")
+        for entry in distill_candidates:
+            console.print(f"  💎 {entry.title[:60]} (confidence: {entry.confidence:.2f})")
+        console.print()
+        console.print("[bold]Run to promote:[/bold] agent-sync memory distill")
+    else:
+        console.print("[dim]No entries ready for distillation.[/dim]")
+
+    console.print()
+    console.print("[bold]💡 Prompts for interactive review:[/bold]")
+    if distill_candidates:
+        console.print("  1. 以上哪些知识点需要沉淀为 directive？(回复编号或'all')")
+    if observations:
+        console.print("  2. 有没有遗漏的重要观察需要手动添加？")
+    console.print("  3. 有没有需要删除的过期记忆？")

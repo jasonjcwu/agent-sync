@@ -208,6 +208,9 @@ A: `insight` = 通用观察, `procedure` = 可重复流程 → skill 候选, `to
 **Q: OpenClaw 的记忆怎么配置？/ How to configure OpenClaw memory?**
 A: OpenClaw 内置记忆，每天自动写 `memory/YYYY-MM-DD.md`。agent-sync 自动读取。只需确保 `memory.yaml` 里 openclaw 的 path 指向正确的 memory 目录。
 
+**Q: 公司内网/离线能用吗？/ Does it work offline?**
+A: 完全可以。用内网 Git（GitLab CE/Gitea）同步，Obsidian 本地 vault 做知识库，memory 只配 openclaw 源。全程不需要外网。 / Fully offline. Use internal Git, local Obsidian vault, and openclaw-only memory source. No internet needed.
+
 ---
 
 ## 完整文档 / Full Documentation

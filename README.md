@@ -80,11 +80,17 @@ Layered, not copied. One source of truth, adapted per platform.
 | Warm 温记忆 | `memory/core.md` | Cross-session profile (~100 lines) / 跨会话画像 |
 | Cold 冷记忆 | `directives/` + `skills/` | Long-term knowledge / 长期知识 |
 
-**3. Directives — how the agent thinks / 指令 — AI 怎么思考**
+**3. Directives + Skills — how the agent thinks and acts / 指令+技能 — AI 怎么思考和行动**
 
-Not "who I am" but "how I think" — personal principles and decision preferences. Organized by domain with index routing.
+Two types of long-term knowledge / 两种长期知识：
 
-不是"我是谁"而是"我怎么思考" — 个人决策偏好和认知沉淀。按领域组织，带路由索引。
+| Type | Location | Description |
+|------|----------|-------------|
+| Directives 指令 | `directives/` | How to think — values, decision preferences / 怎么思考 — 价值观、决策偏好 |
+| Skills 技能 | `skills/` | How to act — repeatable procedures, tool workflows / 怎么做 — 可复用流程、工具操作 |
+
+Both are organized with index routing (INDEX.md). Agent loads on demand.
+两种都按领域组织，带路由索引，按需加载。
 
 ### Directory Structure / 目录结构
 
@@ -221,6 +227,28 @@ sources:
 OpenClaw's AGENTS.md instructs the agent to write daily notes to `memory/YYYY-MM-DD.md`. agent-sync's Reflector reads these markdown files, parses sections by `##` headings, and treats each section as a hot observation. No plugin or API needed — it's just markdown files in a directory.
 
 OpenClaw 的 AGENTS.md 会指示 AI 将每日笔记写入 `memory/YYYY-MM-DD.md`。agent-sync 的 Reflector 读取这些 markdown 文件，按 `##` 标题解析段落，每段作为一个热记忆观察。无需插件或 API — 就是目录里的 markdown 文件。
+
+### Air-Gapped / Corporate Network / 离线 & 内网环境
+
+agent-sync works fully offline. No cloud services required.
+agent-sync 完全支持离线使用，不依赖任何云服务。
+
+- **Git sync**: Use internal GitLab CE, Gitea, or any self-hosted Git / 用内网 GitLab CE、Gitea 或任何自建 Git
+- **Knowledge base**: Obsidian local vault, no internet needed / Obsidian 本地仓库，不需要联网
+- **Memory**: Only OpenClaw source (markdown files), skip claude-mem / 只用 OpenClaw 记忆源（markdown 文件），跳过 claude-mem
+- **No external API calls** at any point / 全程无外部 API 调用
+
+Config for air-gapped setup / 离线配置：
+```yaml
+# memory.yaml — corporate/offline mode / 公司/离线模式
+sources:
+  - type: openclaw
+    path: ../memory/    # local markdown files / 本地 markdown 文件
+```
+
+Cold knowledge output / 冷知识输出：
+- **Corporate / 公司内**: only `directives/` (stays internal, no Obsidian) / 只沉淀为指令，不外传
+- **Personal / 个人**: can bind Obsidian as external brain / 可以绑 Obsidian 做外挂大脑
 
 ### Memory Pipeline / 记忆管线
 

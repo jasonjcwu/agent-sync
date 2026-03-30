@@ -111,6 +111,34 @@ class UniversalAgent(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
 
+# --- Directive File Loading ---
+
+
+class DirectiveFile(BaseModel):
+    """A loaded directive .md file from the directives/ directory."""
+    filename: str
+    content: str
+
+
+def load_directives(agent_path: Path) -> list[DirectiveFile]:
+    """Recursively scan directives/ directory and load all .md files.
+
+    Returns a flat list of DirectiveFile entries sorted by filename.
+    """
+    directives_dir = agent_path / "directives"
+    if not directives_dir.is_dir():
+        return []
+
+    entries: list[DirectiveFile] = []
+    for md_file in sorted(directives_dir.rglob("*.md")):
+        rel = md_file.relative_to(directives_dir)
+        entries.append(DirectiveFile(
+            filename=str(rel),
+            content=md_file.read_text(),
+        ))
+    return entries
+
+
 # --- I/O ---
 
 

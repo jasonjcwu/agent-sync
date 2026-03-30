@@ -7,7 +7,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
 from agent_sync.adapters.base import AdapterStatus, BaseAdapter, PullResult, SyncResult
-from agent_sync.core.schema import UniversalAgent
+from agent_sync.core.schema import UniversalAgent, load_directives
 
 GLOBAL_CLAUDE_MD = Path.home() / ".claude" / "CLAUDE.md"
 PROJECT_CLAUDE_MD = "CLAUDE.md"
@@ -65,11 +65,13 @@ class ClaudeCodeAdapter(BaseAdapter):
 
     def _render_claude_md(self, env: Environment, agent: UniversalAgent) -> str:
         tmpl = env.get_template("CLAUDE.md.j2")
-        return tmpl.render(agent=agent)
+        directives = load_directives(agent.base_path) if agent.base_path else []
+        return tmpl.render(agent=agent, directives=directives)
 
     def _render_global_claude_md(self, env: Environment, agent: UniversalAgent) -> str:
         tmpl = env.get_template("CLAUDE.global.md.j2")
-        return tmpl.render(agent=agent)
+        directives = load_directives(agent.base_path) if agent.base_path else []
+        return tmpl.render(agent=agent, directives=directives)
 
     def _get_jinja_env(self) -> Environment:
         return Environment(

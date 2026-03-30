@@ -1,13 +1,12 @@
-name: 吴老大
+name: Your Name
 timezone: Asia/Shanghai
-github: jasonjcwu
-occupation: 程序员
+github: your-github-username
+occupation: Your Occupation
 interests:
-  - 投资交易（中美科技股）
-  - 运动（力量训练、跑步、半马、越野跑）
-  - 科技（AGI、前沿科技）
+  - Interest 1
+  - Interest 2
+  - Interest 3
 preferences:
-  - 中英双语分析
-  - 不需要晚报功能
-  - 链接自动剪藏到 Obsidian
-  - 用 pnpm 而非 npm
+  - Language preference (e.g., bilingual analysis)
+  - Feature preference (e.g., no evening reports)
+  - Tool preference (e.g., use pnpm over npm)

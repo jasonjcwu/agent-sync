@@ -7,7 +7,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
 from agent_sync.adapters.base import AdapterStatus, BaseAdapter, PullResult, SyncResult
-from agent_sync.core.schema import UniversalAgent
+from agent_sync.core.schema import UniversalAgent, load_directives
 
 
 class OpenClawAdapter(BaseAdapter):
@@ -68,7 +68,8 @@ class OpenClawAdapter(BaseAdapter):
 
     def _render_soul(self, env: Environment, agent: UniversalAgent) -> str:
         tmpl = env.get_template("SOUL.md.j2")
-        return tmpl.render(soul=agent.soul)
+        directives = load_directives(agent.base_path) if agent.base_path else []
+        return tmpl.render(soul=agent.soul, directives=directives)
 
     def _render_identity(self, env: Environment, agent: UniversalAgent) -> str:
         tmpl = env.get_template("IDENTITY.md.j2")

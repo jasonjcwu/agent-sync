@@ -270,6 +270,7 @@ agent-sync sync
 | Cursor | ✅ | .cursor/rules/*.mdc |
 | Windsurf | 🔜 | Planned / 计划中 |
 | Copilot | 🔜 | Planned / 计划中 |
+| CatPaw | 🔜 | Planned / 计划中 |
 | Trae | 🔜 | Planned / 计划中 |
 
 ---

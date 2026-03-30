@@ -50,6 +50,62 @@ TRIVIAL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# --- Warm entry classification ---
+
+# Keywords that indicate a repeatable procedure or workflow
+_PROCEDURE_KEYWORDS = [
+    "workflow", "pipeline", "recipe", "procedure", "步骤", "流程",
+    "best practice", "最佳实践", "checklist", "模板", "template",
+    "how to", "如何", "怎么做", "总是", "always", "每次", "every time",
+    "standard", "标准", "convention", "惯例", "pattern", "模式",
+    "步骤", "先后", "然后", "first", "then", "finally",
+]
+
+# Keywords that indicate tool/technology usage patterns
+_TOOL_PATTERN_KEYWORDS = [
+    "cli", "command", "脚本", "script", "tool", "工具",
+    "api", "sdk", "plugin", "插件", "extension", "扩展",
+    "automat", "自动", "cron", "schedule", "定时",
+    "deploy", "部署", "ci/cd", "github actions",
+]
+
+# Keywords that indicate personal preferences
+_PREFERENCE_KEYWORDS = [
+    "prefer", "喜欢", "偏好", "宁愿", "rather",
+    "don't like", "不喜欢", "avoid", "避免",
+    "default", "默认", "习惯",
+]
+
+
+def _classify_entry(title: str, content: str) -> str:
+    """Classify a warm entry into insight / procedure / tool_pattern / preference.
+
+    Returns the most specific category that matches.
+    """
+    text = f"{title} {content}".lower()
+
+    proc_hits = sum(1 for kw in _PROCEDURE_KEYWORDS if kw in text)
+    tool_hits = sum(1 for kw in _TOOL_PATTERN_KEYWORDS if kw in text)
+    pref_hits = sum(1 for kw in _PREFERENCE_KEYWORDS if kw in text)
+
+    # Need at least 2 keyword hits or 1 strong hit to classify
+    scores = {
+        "procedure": proc_hits,
+        "tool_pattern": tool_hits,
+        "preference": pref_hits,
+    }
+
+    best_category = max(scores, key=scores.get)
+    best_score = scores[best_category]
+
+    if best_score >= 2:
+        return best_category
+    elif best_score >= 1 and len(content) > 100:
+        # Longer content with even 1 keyword hit is likely procedural
+        return best_category
+    else:
+        return "insight"  # default: generic insight
+
 
 def _has_clear_scenario(narrative: str) -> bool:
     if not narrative:
@@ -240,8 +296,10 @@ class Reflector:
             if _has_clear_scenario(obs.narrative):
                 score += 0.5
             if score >= threshold:
+                # Classify the entry
+                category = _classify_entry(obs.title, obs.narrative or "\n".join(obs.facts))
                 candidates.append(WarmEntry(
-                    category="insight",
+                    category=category,
                     title=obs.title,
                     content=obs.narrative or "\n".join(obs.facts),
                     confidence=round(score, 2),
@@ -367,14 +425,6 @@ class Reflector:
 
     # --- Skill discovery (warm → skills) ---
 
-    # Heuristics: observations that describe a repeatable procedure or tool usage pattern
-    SKILL_INDICATORS = [
-        "workflow", "pipeline", "recipe", "procedure", "步骤", "流程",
-        "best practice", "最佳实践", "checklist", "模板", "template",
-        "how to", "如何", "怎么做", "总是", "always", "每次", "every time",
-        "standard", "标准", "convention", "惯例", "pattern", "模式",
-    ]
-
     def discover_skill_candidates(
         self,
         warm_path: Path,
@@ -383,7 +433,7 @@ class Reflector:
         """Find warm entries that look like repeatable skills/procedures.
 
         A warm entry is a skill candidate when:
-        - Contains skill indicator keywords
+        - category is 'procedure' or 'tool_pattern' (classified by reflect)
         - confidence >= min_confidence
         - occurrences >= 2 (seen in multiple sessions)
         - Has substantive content (>50 chars)
@@ -405,15 +455,14 @@ class Reflector:
 
         candidates = []
         for e in warm.entries:
+            # Only procedure and tool_pattern types are skill candidates
+            if e.category not in ("procedure", "tool_pattern"):
+                continue
             if e.confidence < min_confidence:
                 continue
             if e.occurrences < 2:
                 continue
             if not e.content or len(e.content.strip()) < 50:
-                continue
-            # Check for skill indicators
-            text = f"{e.title} {e.content}".lower()
-            if not any(ind in text for ind in self.SKILL_INDICATORS):
                 continue
             # Skip if skill already exists
             safe = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]+", "_", e.title.strip()).strip("_")[:40].lower()

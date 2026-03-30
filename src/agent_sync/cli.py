@@ -412,8 +412,15 @@ def memory_review(
     # Warm summary
     if warm and warm.entries:
         console.print(f"[bold yellow]🌡️ Warm Memory: {len(warm.entries)} entries[/bold yellow]")
-        for entry in warm.entries[:5]:
-            console.print(f"  {entry.title[:60]} (confidence: {entry.confidence:.2f})")
+        # Group by category
+        by_cat: dict[str, list] = {}
+        for entry in warm.entries:
+            by_cat.setdefault(entry.category, []).append(entry)
+        for cat, entries in by_cat.items():
+            icon = {"procedure": "🔧", "tool_pattern": "⚙️", "preference": "🎯", "insight": "💡"}.get(cat, "📝")
+            console.print(f"  {icon} {cat}: {len(entries)}")
+            for entry in entries[:3]:
+                console.print(f"    {entry.title[:60]} (confidence: {entry.confidence:.2f})")
     else:
         console.print("[dim]No warm memory yet.[/dim]")
 

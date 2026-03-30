@@ -76,6 +76,6 @@ def load_memory_config(agent_path: Path) -> MemoryConfig:
     return MemoryConfig(
         sources=[
             MemorySource(type="claude-mem", path="~/.claude-mem/claude-mem.db"),
-            MemorySource(type="openclaw", path="~/Desktop/jasonbot/memory"),
+            MemorySource(type="openclaw", path="~/agent-memory/"),
         ],
     )

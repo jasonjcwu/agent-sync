@@ -171,7 +171,7 @@ class Reflector:
         self.config = config or MemoryConfig(
             sources=[
                 MemorySource(type="claude-mem", path="~/.claude-mem/claude-mem.db"),
-                MemorySource(type="openclaw", path="~/Desktop/jasonbot/memory"),
+                MemorySource(type="openclaw", path="~/agent-memory/"),
             ],
         )
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+import re
 
 import typer
 from rich.console import Console
@@ -446,13 +447,28 @@ def memory_review(
     else:
         console.print("[dim]No directives.[/dim]")
 
+    # Skill discovery candidates
+    if warm:
+        skill_candidates = reflector.discover_skill_candidates(warm_path)
+        if skill_candidates:
+            console.print(f"\n[bold magenta]🛠 Skill Discovery Candidates: {len(skill_candidates)}[/bold magenta]")
+            console.print("[dim]These patterns look like repeatable procedures/skills:[/dim]")
+            for i, entry in enumerate(skill_candidates, 1):
+                console.print(f"  {i}. 🔧 {entry.title[:60]} (confidence: {entry.confidence:.2f}, seen {entry.occurrences}x)")
+            console.print()
+            console.print("[bold]Run to create:[/bold] agent-sync skills discover --confirm")
+
     console.print()
     console.print("[bold]💡 Prompts for interactive review:[/bold]")
     if distill_candidates:
         console.print("  1. 以上哪些知识点需要沉淀为 directive？(回复编号或'all')")
+    if warm and hasattr(reflector, 'discover_skill_candidates'):
+        skill_cands = reflector.discover_skill_candidates(warm_path)
+        if skill_cands:
+            console.print("  2. 有重复的操作模式可以沉淀为 skill，同意吗？(回复编号或'all')")
     if observations:
-        console.print("  2. 有没有遗漏的重要观察需要手动添加？")
-    console.print("  3. 有没有需要删除的过期记忆？")
+        console.print("  3. 有没有遗漏的重要观察需要手动添加？")
+    console.print("  4. 有没有需要删除的过期记忆？")
 
 
 # --- Skills subcommands ---
@@ -505,3 +521,102 @@ def skills_sync(
     syncer.sync(dry_run=dry_run)
 
     console.print(f"[green]Synced {len(skills)} skills to platforms.[/green]")
+
+
+@skills_app.command("discover")
+def skills_discover(
+    agent_path: Path = typer.Option(Path("universal-agent"), "--agent", "-a"),
+    confirm: bool = typer.Option(False, "--confirm", help="Auto-create discovered skills"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing"),
+):
+    """Discover skill candidates from warm memory patterns.
+
+    Scans warm memory for repeatable procedures/tool usage patterns.
+    With --confirm, creates skill directories using skill-creator conventions.
+
+    Without --confirm, just lists candidates for review.
+    """
+    from agent_sync.core.reflector import Reflector, load_warm
+
+    warm_path = agent_path / "memory" / "core.md"
+    if not warm_path.exists():
+        console.print("[yellow]No warm memory. Run 'memory consolidate' first.[/yellow]")
+        raise typer.Exit(1)
+
+    reflector = Reflector(agent_path=agent_path)
+    candidates = reflector.discover_skill_candidates(warm_path)
+
+    if not candidates:
+        console.print("[dim]No skill candidates found in warm memory.[/dim]")
+        raise typer.Exit()
+
+    console.print(f"[bold]🛠 Discovered {len(candidates)} skill candidate(s):[/bold]\n")
+
+    for i, entry in enumerate(candidates, 1):
+        console.print(f"  {i}. [bold]{entry.title[:60]}[/bold]")
+        console.print(f"     Confidence: {entry.confidence:.2f} | Seen: {entry.occurrences}x | Source: {entry.source}")
+        if entry.content:
+            preview = entry.content[:100].replace("\n", " ")
+            console.print(f"     {preview}...")
+        console.print()
+
+    if dry_run or not confirm:
+        console.print("[dim]Run with --confirm to create skills, or pick specific ones:[/dim]")
+        console.print("  agent-sync skills discover --confirm")
+        raise typer.Exit()
+
+    # Create skill scaffolds
+    skills_dir = agent_path / "skills"
+    skills_dir.mkdir(parents=True, exist_ok=True)
+
+    created = []
+    for entry in candidates:
+        safe_name = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]+", "-", entry.title.strip()).strip("-")[:40].lower()
+        if not safe_name:
+            safe_name = f"skill-{entry.origin_date}"
+
+        skill_dir = skills_dir / safe_name
+        if skill_dir.exists():
+            console.print(f"  [yellow]Skip[/yellow] {safe_name} (already exists)")
+            continue
+
+        if dry_run:
+            console.print(f"  [dim]Would create[/dim] {safe_name}")
+            continue
+
+        skill_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate SKILL.md scaffold
+        description = entry.content[:120].replace("\n", " ") if entry.content else entry.title
+        skill_md = [
+            f"# {entry.title}",
+            "",
+            f"> Auto-discovered from {entry.source} (confidence: {entry.confidence:.2f})",
+            f"> Seen {entry.occurrences} times across sessions",
+            "",
+            "## Description",
+            "",
+            description,
+            "",
+            "## When to Use",
+            "",
+            f"<!-- Describe trigger scenarios for this skill -->",
+            "",
+            "## Instructions",
+            "",
+            "<!-- Step-by-step procedure -->",
+            "",
+            "## References",
+            "",
+            f"- Source: {entry.source} ({entry.origin_date})",
+            "",
+        ]
+        (skill_dir / "SKILL.md").write_text("\n".join(skill_md))
+        created.append(safe_name)
+        console.print(f"  [green]Created[/green] {safe_name}/SKILL.md")
+
+    if created:
+        console.print(f"\n[green]Created {len(created)} skill(s).[/green]")
+        console.print("[dim]Edit the SKILL.md files to refine instructions, then run 'skills sync'.[/dim]")
+    else:
+        console.print("[dim]No new skills created (all already exist).[/dim]")

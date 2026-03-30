@@ -365,6 +365,64 @@ class Reflector:
                 results.append((entry, path))
         return results
 
+    # --- Skill discovery (warm → skills) ---
+
+    # Heuristics: observations that describe a repeatable procedure or tool usage pattern
+    SKILL_INDICATORS = [
+        "workflow", "pipeline", "recipe", "procedure", "步骤", "流程",
+        "best practice", "最佳实践", "checklist", "模板", "template",
+        "how to", "如何", "怎么做", "总是", "always", "每次", "every time",
+        "standard", "标准", "convention", "惯例", "pattern", "模式",
+    ]
+
+    def discover_skill_candidates(
+        self,
+        warm_path: Path,
+        min_confidence: float = 1.8,
+    ) -> list[WarmEntry]:
+        """Find warm entries that look like repeatable skills/procedures.
+
+        A warm entry is a skill candidate when:
+        - Contains skill indicator keywords
+        - confidence >= min_confidence
+        - occurrences >= 2 (seen in multiple sessions)
+        - Has substantive content (>50 chars)
+
+        Returns candidates sorted by confidence.
+        """
+        warm = load_warm(warm_path)
+        if not warm.entries:
+            return []
+
+        existing_skills = set()
+        # Don't suggest skills that already exist
+        if warm.path:
+            skills_dir = warm.path.parent.parent / "skills"
+            if skills_dir.is_dir():
+                for sf in skills_dir.rglob("SKILL.md"):
+                    rel = sf.relative_to(skills_dir)
+                    existing_skills.add(str(rel.parent).lower())
+
+        candidates = []
+        for e in warm.entries:
+            if e.confidence < min_confidence:
+                continue
+            if e.occurrences < 2:
+                continue
+            if not e.content or len(e.content.strip()) < 50:
+                continue
+            # Check for skill indicators
+            text = f"{e.title} {e.content}".lower()
+            if not any(ind in text for ind in self.SKILL_INDICATORS):
+                continue
+            # Skip if skill already exists
+            safe = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]+", "_", e.title.strip()).strip("_")[:40].lower()
+            if safe in existing_skills:
+                continue
+            candidates.append(e)
+
+        return sorted(candidates, key=lambda x: (-x.confidence, -x.occurrences))
+
     # --- Source readers ---
 
     def _read_claude_mem(self, days: int, source: MemorySource) -> list[HotObservation]:

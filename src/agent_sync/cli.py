@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+import re
 
 import typer
 from rich.console import Console
@@ -299,3 +300,330 @@ def memory_pull(
 
     subprocess.run(["git", "pull"], cwd=agent_path, check=True)
     console.print("[green]Memory pulled from remote.[/green]")
+
+
+@memory_app.command("distill")
+def memory_distill(
+    agent_path: Path = typer.Option(Path("universal-agent"), "--agent", "-a"),
+    min_confidence: float = typer.Option(2.0, "--threshold", "-t", help="Minimum confidence to distill"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing"),
+):
+    """Distill warm memory → cold directives (warm → directives/).
+
+    High-confidence warm entries get promoted to directive .md files.
+    These become long-term principles and axioms.
+    """
+    from agent_sync.core.reflector import Reflector
+    from agent_sync.core.schema import load_skills
+
+    warm_path = agent_path / "memory" / "core.md"
+    if not warm_path.exists():
+        console.print("[yellow]No warm memory found. Run 'memory consolidate' first.[/yellow]")
+        raise typer.Exit(1)
+
+    reflector = Reflector(agent_path=agent_path)
+    candidates = reflector.distill_candidates(warm_path, min_confidence)
+
+    if not candidates:
+        console.print("[dim]No entries meet the distillation threshold.[/dim]")
+        raise typer.Exit()
+
+    console.print(f"[bold]Distillation candidates ({len(candidates)}):[/bold]")
+    from rich.table import Table
+
+    table = Table()
+    table.add_column("Title", style="bold")
+    table.add_column("Confidence", width=12)
+    table.add_column("Category", width=10)
+    table.add_column("Source", width=12)
+
+    for entry in candidates:
+        table.add_row(entry.title[:60], f"{entry.confidence:.2f}", entry.category, entry.source)
+
+    console.print(table)
+
+    if dry_run:
+        console.print("\n[dim](dry run — no files written)[/dim]")
+        raise typer.Exit()
+
+    directives_dir = agent_path / "directives"
+    directives_dir.mkdir(parents=True, exist_ok=True)
+    results = reflector.distill(warm_path, directives_dir, dry_run=False)
+
+    for entry, path in results:
+        console.print(f"  [green]→[/green] {path.name}: {entry.title[:50]}")
+
+    console.print(f"\n[green]Distilled {len(results)} entries to directives/[/green]")
+
+    # Show skills summary
+    skills = load_skills(agent_path)
+    if skills:
+        console.print(f"\n[bold magenta]🛠 Skills: {len(skills)}[/bold magenta]")
+        for s in skills:
+            console.print(f"  {s.name}: {s.description[:60]}")
+
+
+@memory_app.command("review")
+def memory_review(
+    agent_path: Path = typer.Option(Path("universal-agent"), "--agent", "-a"),
+    days: int = typer.Option(7, "--days", "-d"),
+):
+    """Interactive review: show recent knowledge and ask which to promote.
+
+    Outputs a summary of recent observations and distillation candidates,
+    formatted for interactive chat-based review.
+    """
+    from agent_sync.core.memory_schema import load_memory_config
+    from agent_sync.core.reflector import Reflector, load_warm
+    from agent_sync.core.schema import load_skills, load_directives
+
+    config = load_memory_config(agent_path)
+    reflector = Reflector(config)
+
+    # Collect hot observations
+    observations = reflector.collect_observations(days=days)
+
+    # Load warm memory
+    warm_path = agent_path / "memory" / "core.md"
+    warm = load_warm(warm_path) if warm_path.exists() else None
+
+    # Find distillation candidates
+    distill_candidates = reflector.distill_candidates(warm_path) if warm else []
+
+    # Load skills and directives
+    skills = load_skills(agent_path)
+    directives = load_directives(agent_path)
+
+    console.print("[bold]📊 Knowledge Review[/bold]")
+    console.print(f"Period: last {days} days\n")
+
+    # Hot summary
+    if observations:
+        console.print(f"[bold cyan]🔥 Hot Observations: {len(observations)}[/bold cyan]")
+        for obs in observations[:10]:
+            console.print(f"  [{obs.source}] {obs.title[:60]}")
+        if len(observations) > 10:
+            console.print(f"  ... and {len(observations) - 10} more")
+    else:
+        console.print("[dim]No hot observations.[/dim]")
+
+    console.print()
+
+    # Warm summary
+    if warm and warm.entries:
+        console.print(f"[bold yellow]🌡️ Warm Memory: {len(warm.entries)} entries[/bold yellow]")
+        # Group by category
+        by_cat: dict[str, list] = {}
+        for entry in warm.entries:
+            by_cat.setdefault(entry.category, []).append(entry)
+        for cat, entries in by_cat.items():
+            icon = {"procedure": "🔧", "tool_pattern": "⚙️", "preference": "🎯", "insight": "💡"}.get(cat, "📝")
+            console.print(f"  {icon} {cat}: {len(entries)}")
+            for entry in entries[:3]:
+                console.print(f"    {entry.title[:60]} (confidence: {entry.confidence:.2f})")
+    else:
+        console.print("[dim]No warm memory yet.[/dim]")
+
+    console.print()
+
+    # Distillation candidates
+    if distill_candidates:
+        console.print(f"[bold green]❄️ Distillation Candidates: {len(distill_candidates)}[/bold green]")
+        console.print("[dim]These warm entries are ready to become cold directives:[/dim]")
+        for i, entry in enumerate(distill_candidates, 1):
+            console.print(f"  {i}. 💎 {entry.title[:60]} (confidence: {entry.confidence:.2f})")
+        console.print()
+        console.print("[bold]Run to promote:[/bold] agent-sync memory distill")
+    else:
+        console.print("[dim]No entries ready for distillation.[/dim]")
+
+    # Skills
+    if skills:
+        console.print(f"\n[bold magenta]🛠 Skills: {len(skills)}[/bold magenta]")
+        for s in skills:
+            console.print(f"  {s.name}: {s.description[:60]}")
+    else:
+        console.print("[dim]No skills found.[/dim]")
+
+    # Directives
+    if directives:
+        console.print(f"\n[bold blue]📘 Directives: {len(directives)}[/bold blue]")
+        for d in directives:
+            first_line = d.content.split("\n")[0][:60]
+            console.print(f"  {d.filename}: {first_line}")
+    else:
+        console.print("[dim]No directives.[/dim]")
+
+    # Skill discovery candidates
+    if warm:
+        skill_candidates = reflector.discover_skill_candidates(warm_path)
+        if skill_candidates:
+            console.print(f"\n[bold magenta]🛠 Skill Discovery Candidates: {len(skill_candidates)}[/bold magenta]")
+            console.print("[dim]These patterns look like repeatable procedures/skills:[/dim]")
+            for i, entry in enumerate(skill_candidates, 1):
+                console.print(f"  {i}. 🔧 {entry.title[:60]} (confidence: {entry.confidence:.2f}, seen {entry.occurrences}x)")
+            console.print()
+            console.print("[bold]Run to create:[/bold] agent-sync skills discover --confirm")
+
+    console.print()
+    console.print("[bold]💡 Prompts for interactive review:[/bold]")
+    if distill_candidates:
+        console.print("  1. 以上哪些知识点需要沉淀为 directive？(回复编号或'all')")
+    if warm and hasattr(reflector, 'discover_skill_candidates'):
+        skill_cands = reflector.discover_skill_candidates(warm_path)
+        if skill_cands:
+            console.print("  2. 有重复的操作模式可以沉淀为 skill，同意吗？(回复编号或'all')")
+    if observations:
+        console.print("  3. 有没有遗漏的重要观察需要手动添加？")
+    console.print("  4. 有没有需要删除的过期记忆？")
+
+
+# --- Skills subcommands ---
+
+skills_app = typer.Typer(help="Skills registry: scan, list, sync.")
+app.add_typer(skills_app, name="skills")
+
+
+@skills_app.command("scan")
+def skills_scan(
+    agent_path: Path = typer.Option(Path("universal-agent"), "--agent", "-a"),
+):
+    """Scan skills/ directory and list all skills."""
+    from agent_sync.core.schema import load_skills
+    from rich.table import Table
+
+    skills = load_skills(agent_path)
+    if not skills:
+        console.print("[dim]No skills found. Add skills to universal-agent/skills/[/dim]")
+        raise typer.Exit()
+
+    console.print(f"[bold]🛠 Found {len(skills)} skill(s):[/bold]\n")
+
+    table = Table()
+    table.add_column("Name", style="bold")
+    table.add_column("Path", style="dim")
+    table.add_column("Description")
+
+    for s in skills:
+        table.add_row(s.name, s.path, s.description[:60])
+
+    console.print(table)
+
+
+@skills_app.command("sync")
+def skills_sync(
+    agent_path: Path = typer.Option(Path("universal-agent"), "--agent", "-a"),
+    project_path: Path = typer.Argument(Path.cwd(), help="Target project directory"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing"),
+):
+    """Sync skills summary to all detected platforms."""
+    from agent_sync.core.schema import load_skills
+
+    skills = load_skills(agent_path)
+    if not skills:
+        console.print("[dim]No skills to sync.[/dim]")
+        raise typer.Exit()
+
+    syncer = Syncer(agent_path, project_path)
+    syncer.sync(dry_run=dry_run)
+
+    console.print(f"[green]Synced {len(skills)} skills to platforms.[/green]")
+
+
+@skills_app.command("discover")
+def skills_discover(
+    agent_path: Path = typer.Option(Path("universal-agent"), "--agent", "-a"),
+    confirm: bool = typer.Option(False, "--confirm", help="Auto-create discovered skills"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing"),
+):
+    """Discover skill candidates from warm memory patterns.
+
+    Scans warm memory for repeatable procedures/tool usage patterns.
+    With --confirm, creates skill directories using skill-creator conventions.
+
+    Without --confirm, just lists candidates for review.
+    """
+    from agent_sync.core.reflector import Reflector, load_warm
+
+    warm_path = agent_path / "memory" / "core.md"
+    if not warm_path.exists():
+        console.print("[yellow]No warm memory. Run 'memory consolidate' first.[/yellow]")
+        raise typer.Exit(1)
+
+    reflector = Reflector(agent_path=agent_path)
+    candidates = reflector.discover_skill_candidates(warm_path)
+
+    if not candidates:
+        console.print("[dim]No skill candidates found in warm memory.[/dim]")
+        raise typer.Exit()
+
+    console.print(f"[bold]🛠 Discovered {len(candidates)} skill candidate(s):[/bold]\n")
+
+    for i, entry in enumerate(candidates, 1):
+        console.print(f"  {i}. [bold]{entry.title[:60]}[/bold]")
+        console.print(f"     Confidence: {entry.confidence:.2f} | Seen: {entry.occurrences}x | Source: {entry.source}")
+        if entry.content:
+            preview = entry.content[:100].replace("\n", " ")
+            console.print(f"     {preview}...")
+        console.print()
+
+    if dry_run or not confirm:
+        console.print("[dim]Run with --confirm to create skills, or pick specific ones:[/dim]")
+        console.print("  agent-sync skills discover --confirm")
+        raise typer.Exit()
+
+    # Create skill scaffolds
+    skills_dir = agent_path / "skills"
+    skills_dir.mkdir(parents=True, exist_ok=True)
+
+    created = []
+    for entry in candidates:
+        safe_name = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]+", "-", entry.title.strip()).strip("-")[:40].lower()
+        if not safe_name:
+            safe_name = f"skill-{entry.origin_date}"
+
+        skill_dir = skills_dir / safe_name
+        if skill_dir.exists():
+            console.print(f"  [yellow]Skip[/yellow] {safe_name} (already exists)")
+            continue
+
+        if dry_run:
+            console.print(f"  [dim]Would create[/dim] {safe_name}")
+            continue
+
+        skill_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate SKILL.md scaffold
+        description = entry.content[:120].replace("\n", " ") if entry.content else entry.title
+        skill_md = [
+            f"# {entry.title}",
+            "",
+            f"> Auto-discovered from {entry.source} (confidence: {entry.confidence:.2f})",
+            f"> Seen {entry.occurrences} times across sessions",
+            "",
+            "## Description",
+            "",
+            description,
+            "",
+            "## When to Use",
+            "",
+            f"<!-- Describe trigger scenarios for this skill -->",
+            "",
+            "## Instructions",
+            "",
+            "<!-- Step-by-step procedure -->",
+            "",
+            "## References",
+            "",
+            f"- Source: {entry.source} ({entry.origin_date})",
+            "",
+        ]
+        (skill_dir / "SKILL.md").write_text("\n".join(skill_md))
+        created.append(safe_name)
+        console.print(f"  [green]Created[/green] {safe_name}/SKILL.md")
+
+    if created:
+        console.print(f"\n[green]Created {len(created)} skill(s).[/green]")
+        console.print("[dim]Edit the SKILL.md files to refine instructions, then run 'skills sync'.[/dim]")
+    else:
+        console.print("[dim]No new skills created (all already exist).[/dim]")

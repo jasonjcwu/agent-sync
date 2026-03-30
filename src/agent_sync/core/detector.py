@@ -7,6 +7,7 @@ from pathlib import Path
 from agent_sync.adapters.base import AdapterStatus, BaseAdapter
 from agent_sync.adapters.claude_code import ClaudeCodeAdapter
 from agent_sync.adapters.codex import CodexAdapter
+from agent_sync.adapters.cursor import CursorAdapter
 from agent_sync.adapters.openclaw import OpenClawAdapter
 
 # Registry of all adapters
@@ -14,6 +15,7 @@ ADAPTERS: list[type[BaseAdapter]] = [
     OpenClawAdapter,
     ClaudeCodeAdapter,
     CodexAdapter,
+    CursorAdapter,
 ]
 
 

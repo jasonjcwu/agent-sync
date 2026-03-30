@@ -1,12 +1,20 @@
-"""Reflector — hot → warm memory promotion engine.
+"""Reflector — hot → warm → cold memory promotion engine.
 
 Read observations from claude-mem SQLite + OpenClaw daily memory files.
 Identify patterns and promote to warm memory (core.md).
+
+Warm → Cold: distill high-confidence, recurring insights into directive .md files
+in the directives/ directory. These become part of the agent's axioms.
 
 Promotion gate criteria (from context-infrastructure):
 - cross_project: mentioned in 2+ projects
 - multi_verified: type appears 2+ times across observations
 - clear_scenario: has a concrete use case
+
+Distill criteria (warm → cold):
+- confidence >= 2.0 (strong signal)
+- occurrences >= 2 (seen multiple times)
+- category is "insight" or "principle"
 
 GC rule: remove entries older than N days with no active references.
 """
@@ -41,6 +49,62 @@ TRIVIAL_RE = re.compile(
     r"(typo|minor fix|cosmetic|trailing whitespace|formatting)",
     re.IGNORECASE,
 )
+
+# --- Warm entry classification ---
+
+# Keywords that indicate a repeatable procedure or workflow
+_PROCEDURE_KEYWORDS = [
+    "workflow", "pipeline", "recipe", "procedure", "步骤", "流程",
+    "best practice", "最佳实践", "checklist", "模板", "template",
+    "how to", "如何", "怎么做", "总是", "always", "每次", "every time",
+    "standard", "标准", "convention", "惯例", "pattern", "模式",
+    "步骤", "先后", "然后", "first", "then", "finally",
+]
+
+# Keywords that indicate tool/technology usage patterns
+_TOOL_PATTERN_KEYWORDS = [
+    "cli", "command", "脚本", "script", "tool", "工具",
+    "api", "sdk", "plugin", "插件", "extension", "扩展",
+    "automat", "自动", "cron", "schedule", "定时",
+    "deploy", "部署", "ci/cd", "github actions",
+]
+
+# Keywords that indicate personal preferences
+_PREFERENCE_KEYWORDS = [
+    "prefer", "喜欢", "偏好", "宁愿", "rather",
+    "don't like", "不喜欢", "avoid", "避免",
+    "default", "默认", "习惯",
+]
+
+
+def _classify_entry(title: str, content: str) -> str:
+    """Classify a warm entry into insight / procedure / tool_pattern / preference.
+
+    Returns the most specific category that matches.
+    """
+    text = f"{title} {content}".lower()
+
+    proc_hits = sum(1 for kw in _PROCEDURE_KEYWORDS if kw in text)
+    tool_hits = sum(1 for kw in _TOOL_PATTERN_KEYWORDS if kw in text)
+    pref_hits = sum(1 for kw in _PREFERENCE_KEYWORDS if kw in text)
+
+    # Need at least 2 keyword hits or 1 strong hit to classify
+    scores = {
+        "procedure": proc_hits,
+        "tool_pattern": tool_hits,
+        "preference": pref_hits,
+    }
+
+    best_category = max(scores, key=scores.get)
+    best_score = scores[best_category]
+
+    if best_score >= 2:
+        return best_category
+    elif best_score >= 1 and len(content) > 100:
+        # Longer content with even 1 keyword hit is likely procedural
+        return best_category
+    else:
+        return "insight"  # default: generic insight
 
 
 def _has_clear_scenario(narrative: str) -> bool:
@@ -232,8 +296,10 @@ class Reflector:
             if _has_clear_scenario(obs.narrative):
                 score += 0.5
             if score >= threshold:
+                # Classify the entry
+                category = _classify_entry(obs.title, obs.narrative or "\n".join(obs.facts))
                 candidates.append(WarmEntry(
-                    category="insight",
+                    category=category,
                     title=obs.title,
                     content=obs.narrative or "\n".join(obs.facts),
                     confidence=round(score, 2),
@@ -267,6 +333,144 @@ class Reflector:
             warm.last_updated = datetime.now().date().isoformat()
             write_warm(warm_path, warm)
         return removed
+
+    # --- Cold distillation (warm → directives) ---
+
+    def distill_candidates(self, warm_path: Path, min_confidence: float = 2.0) -> list[WarmEntry]:
+        """Identify warm entries ready for distillation to cold (directives).
+
+        An entry is a distill candidate when:
+        - confidence >= min_confidence (high-quality insight)
+        - occurrences >= 2 (repeatedly observed)
+        - has meaningful content (not trivial)
+
+        Returns candidates sorted by confidence (highest first).
+        """
+        warm = load_warm(warm_path)
+        if not warm.entries:
+            return []
+        candidates = []
+        for e in warm.entries:
+            if e.confidence < min_confidence:
+                continue
+            if e.occurrences < 2:
+                continue
+            if not e.content or len(e.content.strip()) < 20:
+                continue
+            candidates.append(e)
+        return sorted(candidates, key=lambda x: (-x.confidence, -x.occurrences))
+
+    def distill_to_directive(
+        self,
+        entry: WarmEntry,
+        directives_dir: Path,
+        domain: str = "",
+    ) -> Path:
+        """Distill a warm entry into a directive .md file.
+
+        Creates a file in directives/ with a generated filename.
+        Returns the path of the created file.
+        """
+        directives_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate filename from title
+        safe_title = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]+", "_", entry.title.strip())
+        safe_title = safe_title.strip("_")[:60]
+        if not safe_title:
+            safe_title = f"insight_{entry.origin_date}"
+        filename = f"{safe_title}.md"
+        filepath = directives_dir / filename
+
+        # Don't overwrite existing directives
+        if filepath.exists():
+            return filepath
+
+        lines = [
+            f"# {entry.title}",
+            "",
+            f"> Distilled from {entry.source} on {entry.origin_date}",
+            f"> Confidence: {entry.confidence:.2f} | Occurrences: {entry.occurrences}",
+            "",
+        ]
+        if domain:
+            lines.append(f"**Domain:** {domain}")
+            lines.append("")
+
+        lines.append(entry.content)
+        lines.append("")
+
+        filepath.write_text("\n".join(lines))
+        return filepath
+
+    def distill(
+        self,
+        warm_path: Path,
+        directives_dir: Path,
+        min_confidence: float = 2.0,
+        dry_run: bool = False,
+    ) -> list[tuple[WarmEntry, Path]]:
+        """Run full distillation: find candidates and write directive files.
+
+        Returns list of (entry, directive_path) tuples.
+        """
+        candidates = self.distill_candidates(warm_path, min_confidence)
+        results = []
+        for entry in candidates:
+            if dry_run:
+                results.append((entry, directives_dir / "dry-run"))
+            else:
+                path = self.distill_to_directive(entry, directives_dir)
+                results.append((entry, path))
+        return results
+
+    # --- Skill discovery (warm → skills) ---
+
+    def discover_skill_candidates(
+        self,
+        warm_path: Path,
+        min_confidence: float = 1.8,
+    ) -> list[WarmEntry]:
+        """Find warm entries that look like repeatable skills/procedures.
+
+        A warm entry is a skill candidate when:
+        - category is 'procedure' or 'tool_pattern' (classified by reflect)
+        - confidence >= min_confidence
+        - occurrences >= 2 (seen in multiple sessions)
+        - Has substantive content (>50 chars)
+
+        Returns candidates sorted by confidence.
+        """
+        warm = load_warm(warm_path)
+        if not warm.entries:
+            return []
+
+        existing_skills = set()
+        # Don't suggest skills that already exist
+        if warm.path:
+            skills_dir = warm.path.parent.parent / "skills"
+            if skills_dir.is_dir():
+                for sf in skills_dir.rglob("SKILL.md"):
+                    rel = sf.relative_to(skills_dir)
+                    existing_skills.add(str(rel.parent).lower())
+
+        candidates = []
+        for e in warm.entries:
+            # Only procedure and tool_pattern types are skill candidates
+            if e.category not in ("procedure", "tool_pattern"):
+                continue
+            if e.confidence < min_confidence:
+                continue
+            if e.occurrences < 2:
+                continue
+            if not e.content or len(e.content.strip()) < 50:
+                continue
+            # Skip if skill already exists
+            safe = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]+", "_", e.title.strip()).strip("_")[:40].lower()
+            if safe in existing_skills:
+                continue
+            candidates.append(e)
+
+        return sorted(candidates, key=lambda x: (-x.confidence, -x.occurrences))
 
     # --- Source readers ---
 

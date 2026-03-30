@@ -1,217 +1,160 @@
-# agent-sync 配置指南
+# agent-sync 快速上手指南
 
-> 一次配置，多平台同步 — 让你的 AI agent 在所有平台保持一致人格和记忆
+> 5 分钟，让你的 AI 助手在所有平台保持一致。
 
----
+## 这是什么
 
-## Part 1: OpenClaw 端（远程）
+你用 Claude Code 教会了 AI 用 pnpm、写中文注释、走 feature branch。切到 Cursor，这些全没了。
 
-复制以下内容发送给 OpenClaw：
-
-```
-执行以下操作：
-
-1. 提交当前 workspace 到 git, 如果没有请你叫我创建个 git 地址发给你：
- git add -A
- git commit -m "sync: workspace snapshot"
- git push
-
-2. 确认 workspace 目录名，告诉我完整路径
-```
+**定义一次，到处运行。**
 
 ---
 
-## Part 2: ClaudeCode 端（本地）
+## 第一步：安装
 
-复制以下内容发送给 ClaudeCode：
-
-```
-帮我配置 agent-sync 跨平台同步：
-
-## 1. 安装 agent-sync
-
+```bash
 pip install git+https://github.com/jasonjcwu/agent-sync.git
-
-## 2. 拉取远程 workspace
-
-git clone <你的远程workspace仓库地址> ~/agent-workspace
-
-（如果已存在则 cd ~/agent-workspace && git pull）
-
-## 3. 初始化 universal-agent 配置
-
-agent-sync init ~/agent-workspace
-
-或如果已有配置，检查以下文件是否存在：
-- universal-agent/soul.yaml（人格定义）
-- universal-agent/user.yaml（用户画像）
-- universal-agent/directives/axioms/（记忆结晶）
-
-## 4. 同步人格（系统级 + 项目级）
-
-# 同步到全局 ~/.claude/CLAUDE.md（所有项目共享）
-agent-sync sync -a ~/agent-workspace/universal-agent ~/
-
-# 或同步到特定项目
-agent-sync sync -a ~/agent-workspace/universal-agent <项目目录>
-
-## 5. 验证
-
-agent-sync status
+agent-sync --version
 ```
 
----
+## 第二步：初始化
 
-## 记忆系统
+```bash
+cd ~/my-project
+agent-sync init .
+```
 
-agent-sync 自动从以下源收集记忆：
-- **ClaudeCode**: claude-mem 插件 → `~/.claude-mem/claude-mem.db`
-- **OpenClaw**: `<agent-workspace>/memory/` 目录（相对路径，自动检测）
+生成 `universal-agent/` 目录，里面有 YAML 模板。
 
-### 安装 claude-mem（ClaudeCode 记忆收集）
+## 第三步：填配置
+
+### soul.yaml — AI 的性格和底线
+
+```yaml
+name: assistant
+language: zh-CN
+personality:
+  - 真诚，不表演有用
+  - 有自己的观点，不当应声虫
+  - 遇到问题先自己想办法
+boundaries:
+  - 私密信息不外泄
+  - 对外操作先问确认
+communication:
+  style: 简洁但彻底
+  tone: 温暖真诚
+  do_not:
+    - 说"好问题！"
+    - 说"我很乐意帮忙！"
+```
+
+### user.yaml — 你是谁
+
+```yaml
+name: 你的名字
+timezone: Asia/Shanghai
+github: your-username
+preferences:
+  - 用 pnpm 不要 npm
+  - 代码注释用中文
+  - 永远不要直接 push 到 main
+```
+
+### identity.yaml — AI 身份
+
+```yaml
+name: Assistant
+emoji: "🤖"
+values: []
+traits: []
+```
+
+## 第四步：同步
+
+```bash
+agent-sync sync --dry-run    # 先预览
+agent-sync sync               # 正式同步
+```
+
+**生成了什么：**
+
+| 平台 | 文件 |
+|------|------|
+| Cursor | `.cursor/rules/soul.mdc` + `identity.mdc` + `user.mdc` |
+| Claude Code | `CLAUDE.md` + `~/.claude/CLAUDE.md`（全局） |
+| Codex | `AGENTS.md` |
+| OpenClaw | `SOUL.md` + `IDENTITY.md` + `USER.md` |
+
+## 第五步：设置记忆采集
+
+至少配置一个记忆源。
+
+### 方式 A：Claude Code + claude-mem
 
 在 Claude Code 中执行：
-
 ```
 /plugin marketplace add thedotmack/claude-mem
 /plugin install claude-mem
 ```
 
-重启 Claude Code 后生效。记忆会自动存储到 `~/.claude-mem/claude-mem.db`。
+### 方式 B：OpenClaw（内置，无需插件）
 
-> 参考: [claude-mem](https://github.com/thedotmack/claude-mem)
+OpenClaw 每天自动写 `memory/YYYY-MM-DD.md`。agent-sync 自动读取。
 
-### 自定义记忆源路径
-
-如需自定义路径，在 `universal-agent/memory.yaml` 中配置：
-
+配置 `memory.yaml`：
 ```yaml
 sources:
- - type: claude-mem
-   path: ~/.claude-mem/claude-mem.db
- - type: openclaw
-   path: /your/custom/path/to/memory
-
-gate:
- threshold: 1.5
+  - type: claude-mem
+    path: ~/.claude-mem/claude-mem.db
+  - type: openclaw
+    path: ../memory/
 ```
 
-**默认行为**：
-- openclaw 记忆路径默认为 `<agent-workspace>/memory/`
-- 即 `universal-agent/` 同级的 `memory/` 目录
-
----
-
-## 配置文件说明
-
-### soul.yaml — AI 人格
-```yaml
-name: assistant
-language: zh-CN
-personality:
- - 真诚，不表演有用
- - 有观点，不谄媚
- - 先自己想办法，再问
-boundaries:
- - 私人的事就留在私人里
- - 对外行动前，不确定就先问
-communication:
- style: 简洁但彻底
- tone: 温暖真诚，有边界感
-```
-
-### user.yaml — 用户画像
-```yaml
-name: 你的名字
-timezone: Asia/Beijing
-github: your-username
-preferences:
- - 用 pnpm 而非 npm
- - 中英双语分析
-```
-
-### directives/axioms/ — 记忆结晶
-```
-directives/
-├── INDEX.md # 索引
-├── a01_*.md # AI 相关公理
-├── t01_*.md # 技术决策公理
-└── ...
-```
-
----
-
-## 日常使用
+## 第六步：日常使用
 
 ```bash
-# 同步人格（全局 + 项目）
-agent-sync sync -a ~/agent-workspace/universal-agent
-
-# 查看最近记忆
-agent-sync memory today -a ~/agent-workspace/universal-agent
-
-# 提炼记忆（hot → warm）
-agent-sync memory consolidate -a ~/agent-workspace/universal-agent
-
-# 推送记忆到 git
-cd ~/agent-workspace && git add . && git commit -m "memory sync" && git push
-```
-
-**同步范围**：
-- `~/.claude/CLAUDE.md` — 全局人格和偏好，所有项目生效
-- `<项目>/CLAUDE.md` — 项目特定配置（如需要）
-
----
-
-## 自动化（定时任务）
-
-### macOS/Linux — crontab
-
-```bash
-# 编辑定时任务
-crontab -e
-
-# 添加以下行（每天凌晨 2 点提炼记忆并推送）
-0 2 * * * agent-sync memory consolidate -a ~/agent-workspace/universal-agent && cd ~/agent-workspace && git add . && git commit -m "auto memory sync" && git push
-```
-
-### macOS — launchd（推荐）
-
-创建 `~/Library/LaunchAgents/com.user.agent-sync.plist`：
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
- <key>Label</key>
- <string>com.user.agent-sync</string>
- <key>ProgramArguments</key>
- <array>
- <string>/usr/local/bin/agent-sync</string>
- <string>memory</string>
- <string>consolidate</string>
- <string>-a</string>
- <string>/Users/你的用户名/agent-workspace/universal-agent</string>
- </array>
- <key>StartCalendarInterval</key>
- <dict>
- <key>Hour</key>
- <integer>2</integer>
- <key>Minute</key>
- <integer>0</integer>
- </dict>
-</dict>
-</plist>
-```
-
-加载：
-```bash
-launchctl load ~/Library/LaunchAgents/com.user.agent-sync.plist
+agent-sync memory today          # 看看 AI 最近学到了什么
+agent-sync memory consolidate    # 热→温（自动）
+agent-sync memory review         # 查看所有层状态（推荐每天一次）
+agent-sync memory distill        # 蒸馏长期知识（需确认）
+agent-sync skills discover       # 发现可沉淀的 skill（需确认）
+agent-sync sync                  # 改了配置后重新同步
 ```
 
 ---
 
-## 多机器同步
+## 多台电脑
 
-将 `~/agent-workspace` 放在 git 仓库或云盘，各机器克隆/同步同一份配置即可。
+```bash
+git clone <仓库地址> ~/agent-config
+agent-sync sync -a ~/agent-config/universal-agent ~/my-project
+```
+
+## 常见问题
+
+**Q: 我改了 CLAUDE.md，会被覆盖吗？**
+A: 会。只改 YAML 源文件，不要改生成的文件。
+
+**Q: 只想同步到 Cursor？**
+A: `agent-sync sync -t cursor`
+
+**Q: 怎么看检测到了哪些平台？**
+A: `agent-sync detect` 或 `agent-sync status`
+
+**Q: 公司内网/离线能用吗？**
+A: 完全可以。用内网 Git（GitLab CE/Gitea）同步，Obsidian 本地 vault 做知识库，memory 只配 openclaw 源。全程不需要外网。
+
+**Q: 记忆分类是什么意思？**
+A: `insight` = 通用观察, `procedure` = 可重复流程 → skill 候选, `tool_pattern` = 工具模式 → skill 候选, `preference` = 用户偏好。只有 procedure/tool_pattern 出现 2 次以上才推荐为 skill。
+
+---
+
+## 完整文档
+
+- [README.md](../README.md) — 完整架构、CLI 参考、适配器开发
+- [英文版快速上手](CONFIG_GUIDE_EN.md)
+- [跨平台AI人格与记忆架构设计](https://github.com/jasonjcwu/obsidian/blob/main/01_输出/跨平台AI人格与记忆架构设计.md) — 深度技术文章
+
+## License
+
+MIT

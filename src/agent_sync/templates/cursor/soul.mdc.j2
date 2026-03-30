@@ -1,0 +1,36 @@
+---
+description: Core personality and behavioral boundaries
+globs:
+alwaysApply: true
+---
+
+# Soul — Behavioral Boundaries
+
+## Personality
+
+{% for trait in soul.personality %}
+- {{ trait }}
+{% endfor %}
+
+## Boundaries
+
+{% for boundary in soul.boundaries %}
+- {{ boundary }}
+{% endfor %}
+
+## Communication
+
+- **Style:** {{ soul.communication.style }}
+- **Tone:** {{ soul.communication.tone }}
+
+{% if soul.communication.do_not %}
+## Do Not
+
+{% for rule in soul.communication.do_not %}
+- {{ rule }}
+{% endfor %}
+{% endif %}
+
+---
+
+*Synced from universal-agent/soul.yaml via agent-sync*

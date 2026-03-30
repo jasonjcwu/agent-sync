@@ -1,0 +1,32 @@
+---
+description: User context and preferences
+globs:
+alwaysApply: true
+---
+
+# User Context
+
+- **Name:** {{ user.name }}
+{% if user.timezone %}- **Timezone:** {{ user.timezone }}{% endif %}
+{% if user.github %}- **GitHub:** {{ user.github }}{% endif %}
+{% if user.occupation %}- **Occupation:** {{ user.occupation }}{% endif %}
+
+{% if user.interests %}
+## Interests
+
+{% for interest in user.interests %}
+- {{ interest }}
+{% endfor %}
+{% endif %}
+
+{% if user.preferences %}
+## Preferences
+
+{% for pref in user.preferences %}
+- {{ pref }}
+{% endfor %}
+{% endif %}
+
+---
+
+*Synced from universal-agent/user.yaml via agent-sync*

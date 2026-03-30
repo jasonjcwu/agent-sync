@@ -1,0 +1,48 @@
+---
+description: Identity and values
+globs:
+alwaysApply: true
+---
+
+# Identity
+
+- **Name:** {{ identity.name }}
+- **Emoji:** {{ identity.emoji }}
+
+{% if identity.traits %}
+## Traits
+
+{% for trait in identity.traits %}
+- {{ trait }}
+{% endfor %}
+{% endif %}
+
+{% if identity.values %}
+## Values
+
+{% for value in identity.values %}
+### {{ value.icon }} {{ value.name }}
+
+{% for principle in value.principles %}
+- {{ principle }}
+{% endfor %}
+
+{% endfor %}
+{% endif %}
+
+{% if identity.development_goals %}
+## Development Goals
+
+{% for period, goals in identity.development_goals.items() %}
+### {{ period }}
+
+{% for goal in goals %}
+- {{ goal }}
+{% endfor %}
+
+{% endfor %}
+{% endif %}
+
+---
+
+*Synced from universal-agent/identity.yaml via agent-sync*

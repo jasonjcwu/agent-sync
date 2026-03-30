@@ -270,26 +270,36 @@ agent-sync sync
 | Cursor | ✅ | .cursor/rules/*.mdc |
 | Windsurf | 🔜 | Planned / 计划中 |
 | Copilot | 🔜 | Planned / 计划中 |
+| Trae | 🔜 | Planned / 计划中 |
 
 ---
 
 ## Adding a New Adapter / 添加新平台
 
+Example: adding Trae support / 以 Trae 为例：
+
 ```python
-# src/agent_sync/adapters/windsurf.py
+# src/agent_sync/adapters/trae.py
 from agent_sync.adapters.base import BaseAdapter, SyncResult, PullResult, AdapterStatus
 
-class WindsurfAdapter(BaseAdapter):
-    platform_name = "windsurf"
-    platform_display = "Windsurf"
+class TraeAdapter(BaseAdapter):
+    platform_name = "trae"
+    platform_display = "Trae"
 
-    def detect(self, project_path: Path) -> bool: ...
-    def sync(self, agent, project_path, *, dry_run=False) -> SyncResult: ...
-    def pull(self, agent, project_path) -> PullResult: ...
-    def status(self, project_path) -> AdapterStatus: ...
+    def detect(self, project_path: Path) -> bool:
+        return (project_path / ".trae").exists()
+
+    def sync(self, agent, project_path, *, dry_run=False) -> SyncResult:
+        ...  # Read YAML → render template → write files
+
+    def pull(self, agent, project_path) -> PullResult:
+        ...  # Read platform config → update universal
+
+    def status(self, project_path) -> AdapterStatus:
+        ...
 ```
 
-Register in `detector.py`: `ADAPTERS = [..., WindsurfAdapter]`
+Register in `detector.py`: `ADAPTERS = [..., TraeAdapter]`
 
 See `src/agent_sync/adapters/cursor.py` for a complete reference.
 

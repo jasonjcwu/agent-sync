@@ -31,7 +31,7 @@ class CodexAdapter(BaseAdapter):
 
         content = self._render_agents_md(env, agent)
         target = project_path / AGENTS_MD
-        result.files_written.append(self._write(target, content, dry_run))
+        result.files_written.append(self._write_managed(target, content, dry_run))
 
         return result
 
@@ -59,9 +59,3 @@ class CodexAdapter(BaseAdapter):
             loader=FileSystemLoader(str(self.get_template_dir())),
             keep_trailing_newline=True,
         )
-
-    @staticmethod
-    def _write(path: Path, content: str, dry_run: bool) -> Path:
-        if not dry_run:
-            path.write_text(content)
-        return path

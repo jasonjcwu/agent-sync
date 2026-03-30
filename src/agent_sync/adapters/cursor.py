@@ -37,32 +37,32 @@ class CursorAdapter(BaseAdapter):
         # Soul + boundaries → always-apply rule
         soul_content = self._render_soul_mdc(env, agent)
         target = rules_dir / "soul.mdc"
-        result.files_written.append(self._write(target, soul_content, dry_run))
+        result.files_written.append(self._write_managed(target, soul_content, dry_run))
 
         # Identity + communication → always-apply rule
         identity_content = self._render_identity_mdc(env, agent)
         target = rules_dir / "identity.mdc"
-        result.files_written.append(self._write(target, identity_content, dry_run))
+        result.files_written.append(self._write_managed(target, identity_content, dry_run))
 
         # User preferences → always-apply rule
         user_content = self._render_user_mdc(env, agent)
         target = rules_dir / "user.mdc"
-        result.files_written.append(self._write(target, user_content, dry_run))
+        result.files_written.append(self._write_managed(target, user_content, dry_run))
 
         # Directives → agent-requested rules (loaded on demand)
         directives = load_directives(agent.base_path) if agent.base_path else []
         for d in directives:
-            directive_content = self._render_directive_mdc(d)
+            directive_content = self._render_directive_mdc(env, d)
             safe_name = d.filename.replace("/", "-").replace(".md", ".mdc")
             target = rules_dir / "directives" / safe_name
-            result.files_written.append(self._write(target, directive_content, dry_run))
+            result.files_written.append(self._write_managed(target, directive_content, dry_run))
 
         # Skills summary → agent-requested
         skills = load_skills(agent.base_path) if agent.base_path else []
         if skills:
             skills_content = self._render_skills_mdc(skills)
             target = rules_dir / "skills.mdc"
-            result.files_written.append(self._write(target, skills_content, dry_run))
+            result.files_written.append(self._write_managed(target, skills_content, dry_run))
 
         return result
 
@@ -96,18 +96,13 @@ class CursorAdapter(BaseAdapter):
         tmpl = env.get_template("user.mdc.j2")
         return tmpl.render(user=agent.user)
 
-    def _render_directive_mdc(self, directive) -> str:
+    def _render_directive_mdc(self, env: Environment, directive) -> str:
         """Render a directive as a Cursor .mdc rule."""
-        lines = [
-            "---",
-            "description: " + directive.filename.replace(".md", ""),
-            "globs: ",
-            "alwaysApply: false",
-            "---",
-            "",
-            directive.content,
-        ]
-        return "\n".join(lines)
+        tmpl = env.get_template("directive.mdc.j2")
+        return tmpl.render(
+            description=directive.filename.replace(".md", ""),
+            content=directive.content,
+        )
 
     def _render_skills_mdc(self, skills) -> str:
         """Render skills summary as a Cursor .mdc rule."""
@@ -136,10 +131,3 @@ class CursorAdapter(BaseAdapter):
             loader=FileSystemLoader(str(self.get_template_dir())),
             keep_trailing_newline=True,
         )
-
-    @staticmethod
-    def _write(path: Path, content: str, dry_run: bool) -> Path:
-        if not dry_run:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content)
-        return path

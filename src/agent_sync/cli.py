@@ -202,11 +202,9 @@ def memory_today(
     days: int = typer.Option(7, "--days", "-d", help="How many days to look back"),
 ):
     """Show recent hot observations from all sources."""
-    from agent_sync.core.memory_schema import load_memory_config
     from agent_sync.core.reflector import Reflector
 
-    config = load_memory_config(agent_path)
-    reflector = Reflector(config)
+    reflector = Reflector(agent_path=agent_path)
     observations = reflector.collect_observations(days=days)
 
     if not observations:
@@ -236,11 +234,9 @@ def memory_consolidate(
     gc_days: int = typer.Option(30, "--gc-days", help="Remove warm entries older than N days"),
 ):
     """Run reflector: promote hot → warm, then GC stale entries."""
-    from agent_sync.core.memory_schema import load_memory_config
     from agent_sync.core.reflector import Reflector
 
-    config = load_memory_config(agent_path)
-    reflector = Reflector(config)
+    reflector = Reflector(agent_path=agent_path)
 
     # Collect
     observations = reflector.collect_observations(days=days)
@@ -373,12 +369,10 @@ def memory_review(
     Outputs a summary of recent observations and distillation candidates,
     formatted for interactive chat-based review.
     """
-    from agent_sync.core.memory_schema import load_memory_config
     from agent_sync.core.reflector import Reflector, load_warm
     from agent_sync.core.schema import load_skills, load_directives
 
-    config = load_memory_config(agent_path)
-    reflector = Reflector(config)
+    reflector = Reflector(agent_path=agent_path)
 
     # Collect hot observations
     observations = reflector.collect_observations(days=days)

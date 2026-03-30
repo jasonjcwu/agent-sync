@@ -34,14 +34,16 @@ class ClaudeCodeAdapter(BaseAdapter):
         result = SyncResult(platform=self.platform_name, dry_run=dry_run)
         env = self._get_jinja_env()
 
-        # Project-level CLAUDE.md
+        # Project-level CLAUDE.md — full overwrite
         content = self._render_claude_md(env, agent)
         target = project_path / PROJECT_CLAUDE_MD
         result.files_written.append(self._write(target, content, dry_run))
 
-        # Global ~/.claude/CLAUDE.md (user preferences)
+        # Global ~/.claude/CLAUDE.md — marker-based merge
         global_content = self._render_global_claude_md(env, agent)
-        result.files_written.append(self._write(GLOBAL_CLAUDE_MD, global_content, dry_run))
+        result.files_written.append(
+            self._write_managed(GLOBAL_CLAUDE_MD, global_content, dry_run)
+        )
 
         return result
 
@@ -78,10 +80,3 @@ class ClaudeCodeAdapter(BaseAdapter):
             loader=FileSystemLoader(str(self.get_template_dir())),
             keep_trailing_newline=True,
         )
-
-    @staticmethod
-    def _write(path: Path, content: str, dry_run: bool) -> Path:
-        if not dry_run:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content)
-        return path

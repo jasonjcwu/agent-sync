@@ -30,33 +30,33 @@ class OpenClawAdapter(BaseAdapter):
         # SOUL.md
         soul_content = self._render_soul(env, agent)
         target = project_path / "SOUL.md"
-        result.files_written.append(self._write(target, soul_content, dry_run))
+        result.files_written.append(self._write_managed(target, soul_content, dry_run))
 
         # IDENTITY.md
         identity_content = self._render_identity(env, agent)
         target = project_path / "IDENTITY.md"
-        result.files_written.append(self._write(target, identity_content, dry_run))
+        result.files_written.append(self._write_managed(target, identity_content, dry_run))
 
         # USER.md
         user_content = self._render_user(env, agent)
         target = project_path / "USER.md"
-        result.files_written.append(self._write(target, user_content, dry_run))
+        result.files_written.append(self._write_managed(target, user_content, dry_run))
 
         # MEMORY.md (warm memory — only write if not exists)
         target = project_path / "MEMORY.md"
         if not target.exists():
             memory_content = self._render_memory(env, agent)
-            result.files_written.append(self._write(target, memory_content, dry_run))
+            result.files_written.append(self._write_managed(target, memory_content, dry_run))
         else:
             result.files_skipped.append(target)
 
-        # SKILLS.md (summary of all skills — always overwrite)
+        # SKILLS.md (summary of all skills)
         if agent.base_path:
             skills = load_skills(agent.base_path)
             if skills:
                 target = project_path / "SKILLS.md"
                 skills_content = self._render_skills(skills)
-                result.files_written.append(self._write(target, skills_content, dry_run))
+                result.files_written.append(self._write_managed(target, skills_content, dry_run))
 
         return result
 
@@ -109,9 +109,3 @@ class OpenClawAdapter(BaseAdapter):
             loader=FileSystemLoader(str(self.get_template_dir())),
             keep_trailing_newline=True,
         )
-
-    @staticmethod
-    def _write(path: Path, content: str, dry_run: bool) -> Path:
-        if not dry_run:
-            path.write_text(content)
-        return path

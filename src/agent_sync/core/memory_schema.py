@@ -73,9 +73,10 @@ def load_memory_config(agent_path: Path) -> MemoryConfig:
             data = yaml.safe_load(f) or {}
         if isinstance(data, dict):
             return MemoryConfig(**data)
+    # Defaults: claude-mem at standard location; openclaw uses <agent-workspace>/memory/
     return MemoryConfig(
         sources=[
             MemorySource(type="claude-mem", path="~/.claude-mem/claude-mem.db"),
-            MemorySource(type="openclaw", path="~/agent-memory/"),
+            MemorySource(type="openclaw", path=str(agent_path.parent / "memory")),
         ],
     )

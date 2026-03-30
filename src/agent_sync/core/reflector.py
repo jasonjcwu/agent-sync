@@ -167,13 +167,24 @@ def write_warm(path: Path, warm: WarmMemory) -> None:
 class Reflector:
     """Promote hot observations to warm memory."""
 
-    def __init__(self, config: Optional[MemoryConfig] = None):
-        self.config = config or MemoryConfig(
-            sources=[
-                MemorySource(type="claude-mem", path="~/.claude-mem/claude-mem.db"),
-                MemorySource(type="openclaw", path="~/agent-memory/"),
-            ],
-        )
+    def __init__(self, config: Optional[MemoryConfig] = None, agent_path: Optional[Path] = None):
+        """Initialize reflector with optional config and agent workspace path.
+
+        If no config provided, uses defaults:
+        - claude-mem: ~/.claude-mem/claude-mem.db
+        - openclaw: <agent_path>/../memory/  (relative to universal-agent/)
+        """
+        if config is not None:
+            self.config = config
+        elif agent_path is not None:
+            from agent_sync.core.memory_schema import load_memory_config
+            self.config = load_memory_config(agent_path)
+        else:
+            self.config = MemoryConfig(
+                sources=[
+                    MemorySource(type="claude-mem", path="~/.claude-mem/claude-mem.db"),
+                ],
+            )
 
     def collect_observations(self, days: int = 7) -> list[HotObservation]:
         """Collect from all sources."""
@@ -266,24 +277,51 @@ class Reflector:
         cutoff = int((datetime.now() - timedelta(days=days)).timestamp())
         conn = sqlite3.connect(str(db_path))
         try:
+            # Detect available columns in observations table
+            col_cur = conn.execute("PRAGMA table_info(observations)")
+            available = {row[1] for row in col_cur.fetchall()}
+
+            # Build query dynamically based on actual schema
+            select_cols = []
+            col_map = {
+                "id": "id",
+                "title": "title",
+                "type": "type",
+                "project": "project",
+                "narrative": "narrative",
+                "facts": "facts",
+                "created_at": "created_at",
+                "created_at_epoch": "created_at_epoch",
+                "session_id": "session_id",
+            }
+            for alias, col in col_map.items():
+                if col in available:
+                    select_cols.append(col)
+
+            if not select_cols:
+                return []
+
+            cols_str = ", ".join(select_cols)
             cur = conn.execute(
-                "SELECT id, title, type, project, narrative, facts, created_at, created_at_epoch "
-                "FROM observations WHERE created_at_epoch >= ? ORDER BY created_at_epoch DESC",
+                f"SELECT {cols_str} FROM observations WHERE created_at_epoch >= ? "
+                f"ORDER BY created_at_epoch DESC",
                 (cutoff,),
             )
             results = []
             for row in cur.fetchall():
+                row_dict = dict(zip(select_cols, row))
                 results.append(HotObservation(
-                    id=row[0],
-                    title=row[1] or "",
-                    type=row[2] or "discovery",
-                    project=row[3] or "",
-                    narrative=row[4] or "",
-                    facts=_parse_facts(row[5]),
-                    created_at=row[6] or "",
-                    created_at_epoch=row[7] or 0,
+                    id=row_dict.get("id", 0),
+                    title=row_dict.get("title") or "",
+                    type=row_dict.get("type") or "discovery",
+                    project=row_dict.get("project") or "",
+                    narrative=row_dict.get("narrative") or "",
+                    facts=_parse_facts(row_dict.get("facts")),
+                    created_at=row_dict.get("created_at") or "",
+                    created_at_epoch=row_dict.get("created_at_epoch") or 0,
                     source="claude-mem",
-                    date=(row[6] or "")[:10],
+                    date=(row_dict.get("created_at") or "")[:10],
+                    session_id=row_dict.get("session_id") or "",
                 ))
         finally:
             conn.close()
